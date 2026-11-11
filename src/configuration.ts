@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { Connection, UserError } from './types';
-import { normalizeOrganization, validateDirectory, validateProject } from './validation';
+import { organizationIdentity, parseOrganizationInput, validateDirectory, validateProject } from './validation';
 
 export async function chooseFolder(): Promise<vscode.WorkspaceFolder | undefined> {
   if (!vscode.workspace.isTrusted) { throw new UserError('请先信任当前工作区。'); }
@@ -16,8 +16,12 @@ export async function chooseFolder(): Promise<vscode.WorkspaceFolder | undefined
 
 export function readSettings(folder: vscode.WorkspaceFolder): Connection & { saveDirectory: string } {
   const config = vscode.workspace.getConfiguration('devopsConnector', folder.uri);
-  const organizationUrl = normalizeOrganization(config.get<string>('organizationUrl', ''));
-  const project = validateProject(config.get<string>('project', ''));
+  const parsed = parseOrganizationInput(config.get<string>('organizationUrl', ''));
+  const organizationUrl = parsed.organizationUrl;
+  const project = validateProject(config.get<string>('project', '').trim() || parsed.project || '');
+  if (parsed.project && parsed.project.toLowerCase() !== project.toLowerCase()) {
+    throw new UserError('地址中的项目与 project 配置不一致，请重新运行 Configure Connection。');
+  }
   const saveDirectory = config.get<string>('saveDirectory', 'docs/workitems');
   validateDirectory(saveDirectory);
   return { organizationUrl, project, saveDirectory };
@@ -25,7 +29,7 @@ export function readSettings(folder: vscode.WorkspaceFolder): Connection & { sav
 
 export function tokenKey(folder: vscode.WorkspaceFolder, connection: Connection): string {
   // Separate tokens by workspace folder and organization; never persist them in settings.
-  return 'devopsConnector.pat:' + JSON.stringify([folder.uri.toString(), connection.organizationUrl]);
+  return 'devopsConnector.pat:' + JSON.stringify([folder.uri.toString(), organizationIdentity(connection.organizationUrl)]);
 }
 
 function validationMessage(check: (value: string) => unknown): (value: string) => string | undefined {
@@ -38,17 +42,18 @@ function validationMessage(check: (value: string) => unknown): (value: string) =
 export async function configureConnection(folder: vscode.WorkspaceFolder): Promise<void> {
   const config = vscode.workspace.getConfiguration('devopsConnector', folder.uri);
   const organization = await vscode.window.showInputBox({
-    title: 'DevOps Connector · 组织',
-    prompt: '组织地址，例如 https://dev.azure.com/my-org',
+    title: 'DevOps Connector · 组织或项目地址',
+    prompt: '例如 https://vffice.visualstudio.com/，也可粘贴带项目名称的地址',
     value: config.get<string>('organizationUrl', ''),
     ignoreFocusOut: true,
-    validateInput: validationMessage(normalizeOrganization),
+    validateInput: validationMessage(parseOrganizationInput),
   });
   if (organization === undefined) { return; }
+  const parsed = parseOrganizationInput(organization);
   const project = await vscode.window.showInputBox({
     title: 'DevOps Connector · 项目',
     prompt: 'Azure DevOps 项目名称（不是项目 GUID）',
-    value: config.get<string>('project', ''),
+    value: parsed.project ?? config.get<string>('project', ''),
     ignoreFocusOut: true,
     validateInput: validationMessage(validateProject),
   });
@@ -62,7 +67,7 @@ export async function configureConnection(folder: vscode.WorkspaceFolder): Promi
   });
   if (directory === undefined) { return; }
   const target = vscode.ConfigurationTarget.WorkspaceFolder;
-  await config.update('organizationUrl', normalizeOrganization(organization), target);
+  await config.update('organizationUrl', parsed.organizationUrl, target);
   await config.update('project', validateProject(project), target);
   await config.update('saveDirectory', validateDirectory(directory).join('/'), target);
   await vscode.window.showInformationMessage('连接配置已保存（尚未联网验证）。请设置 PAT，然后导入 Work Item。');

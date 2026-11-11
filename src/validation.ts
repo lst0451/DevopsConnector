@@ -3,7 +3,7 @@ import { Connection, UserError } from './types';
 export function normalizeOrganization(value: string): string {
   let url: URL;
   try { url = new URL(value.trim()); }
-  catch { throw new UserError('请输入完整组织地址，例如 https://dev.azure.com/my-org。'); }
+  catch { throw new UserError('请输入完整组织地址，例如 https://vffice.visualstudio.com/。'); }
   if (url.protocol !== 'https:' || url.username || url.password || url.port || url.search || url.hash) {
     throw new UserError('组织地址必须使用 HTTPS，且不能包含凭据、端口、查询参数或片段。');
   }
@@ -15,9 +15,38 @@ export function normalizeOrganization(value: string): string {
     if (url.pathname !== '/' && url.pathname !== '') { organization = undefined; }
   }
   if (!organization || !/^[a-z0-9][a-z0-9-]{0,63}$/i.test(organization)) {
-    throw new UserError('目前仅支持 Azure DevOps Services 组织地址，不支持自建 Server。');
+    throw new UserError('组织根地址应为 https://组织.visualstudio.com/ 或 https://dev.azure.com/组织。');
   }
-  return 'https://dev.azure.com/' + organization.toLowerCase();
+  return url.hostname === 'dev.azure.com' ?
+    'https://dev.azure.com/' + organization.toLowerCase() : url.origin;
+}
+
+/** Keep the chosen endpoint, but use one identity for both Azure cloud URL forms. */
+export function organizationIdentity(value: string): string {
+  const organization = normalizeOrganization(value);
+  const url = new URL(organization);
+  return url.hostname === 'dev.azure.com' ? organization :
+    'https://dev.azure.com/' + url.hostname.slice(0, -'.visualstudio.com'.length);
+}
+
+export function parseOrganizationInput(value: string): { organizationUrl: string; project?: string } {
+  let url: URL;
+  try { url = new URL(value.trim()); }
+  catch { throw new UserError('请输入组织或项目地址，例如 https://vffice.visualstudio.com/。'); }
+  if (url.protocol !== 'https:' || url.username || url.password || url.port || url.search || url.hash) {
+    throw new UserError('地址必须使用 HTTPS，且不能包含凭据、端口、查询参数或片段。');
+  }
+  const parts = url.pathname.replace(/\/$/, '').split('/').slice(1);
+  const organizationUrl = normalizeOrganization(url.hostname === 'dev.azure.com' ?
+    url.origin + '/' + (parts.shift() ?? '') : url.origin);
+  if (parts.length > 1 || parts.some((part) => !part)) {
+    throw new UserError('请输入组织根地址或项目首页地址，不要包含 Boards、Repos 等页面路径。');
+  }
+  if (parts.length === 0) { return { organizationUrl }; }
+  let project: string;
+  try { project = decodeURIComponent(parts[0]!); }
+  catch { throw new UserError('项目地址包含无效编码。'); }
+  return { organizationUrl, project: validateProject(project) };
 }
 
 export function validateProject(value: string): string {
@@ -67,7 +96,7 @@ export function parseWorkItemInput(value: string, connection: Connection): numbe
     organization = normalizeOrganization(url.origin);
   }
   const [project, area, action, id] = parts;
-  if (organization !== connection.organizationUrl ||
+  if (organizationIdentity(organization) !== organizationIdentity(connection.organizationUrl) ||
     project?.toLowerCase() !== connection.project.toLowerCase()) {
     throw new UserError('链接与当前项目配置的组织或项目不一致，请先切换连接配置。');
   }

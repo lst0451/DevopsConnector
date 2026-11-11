@@ -5,6 +5,13 @@ import { htmlToMarkdown, renderWorkItem } from '../src/markdown';
 const connection = { organizationUrl: 'https://dev.azure.com/example', project: 'My Project' };
 const base = connection.organizationUrl + '/My%20Project/_workitems/edit/42';
 
+test('preserves the configured visualstudio hostname in the exported source link', () => {
+  const result = renderWorkItem({ id: 42, rev: 1, fields: {} },
+    { organizationUrl: 'https://vffice.visualstudio.com', project: 'My Project' }, new Date('2026-11-11T12:00:00Z'));
+  assert.ok(result.includes('https://vffice.visualstudio.com/My%20Project/_workitems/edit/42'));
+  assert.ok(!result.includes('dev.azure.com'));
+});
+
 test('converts description formatting and preserves Unicode', () => {
   const result = htmlToMarkdown('<h2>需求</h2><p><strong>金额</strong> &amp; 税</p><ul><li>第一项</li></ul>', base);
   assert.match(result, /## 需求/);

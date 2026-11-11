@@ -26,7 +26,7 @@
       "properties": {
         "devopsConnector.organizationUrl": {
           "type": "string", "default": "", "scope": "resource",
-          "description": "Azure DevOps Services organization URL, e.g. https://dev.azure.com/my-org. No credentials."
+          "description": "Azure DevOps organization or project URL, e.g. https://vffice.visualstudio.com/ or https://dev.azure.com/my-org. The chosen hostname is preserved. No credentials."
         },
         "devopsConnector.project": {
           "type": "string", "default": "", "scope": "resource",

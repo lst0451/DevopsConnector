@@ -6,6 +6,16 @@ const connection = { organizationUrl: 'https://dev.azure.com/example', project: 
 const fixture = { id: 42, rev: 3, fields: { 'System.TeamProject': 'My Project', 'System.Title': 'Test' } };
 const jsonResponse = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
 
+test('sends the API request directly to the configured visualstudio hostname', async () => {
+  const client = new AzureDevOpsClient(async (url, options) => {
+    assert.equal(url, 'https://vffice.visualstudio.com/My%20Project/_apis/wit/workitems/42?api-version=7.1');
+    assert.equal(options?.redirect, 'error');
+    return jsonResponse(fixture);
+  });
+  const item = await client.getWorkItem({ ...connection, organizationUrl: 'https://vffice.visualstudio.com/' }, 42, 'not-real');
+  assert.deepEqual(item, fixture);
+});
+
 test('requests Work Item read API, encodes project and disables redirects', async () => {
   const client = new AzureDevOpsClient(async (url, options) => {
     assert.equal(url, 'https://dev.azure.com/example/My%20Project/_apis/wit/workitems/42?api-version=7.1');

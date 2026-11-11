@@ -27,7 +27,8 @@ npm run compile
 在开发宿主的命令面板中，依次执行：
 
 1. **DevOps Connector: Configure Connection**
-   - 组织地址，例如 https://dev.azure.com/my-org。
+   - 组织地址，例如 https://vffice.visualstudio.com/ 或 https://dev.azure.com/my-org。
+   - 也可粘贴项目地址，例如 https://vffice.visualstudio.com/VFF070.Pro-Demnity；下一步会预填项目名称供确认。
    - Azure DevOps 项目名称，支持空格和中文；此版本不接受项目 GUID 代替名称。
    - 项目内相对保存目录，默认 docs/workitems。
 2. **DevOps Connector: Set Personal Access Token**
@@ -60,7 +61,7 @@ PAT 按“工作区文件夹 + 组织”保存在 VS Code SecretStorage。可通
 
 ## 安全与限制
 
-- 只读 Azure DevOps Services API 7.1。支持 dev.azure.com 地址以及规范化后的组织级 visualstudio.com 旧地址。
+- 只读 Azure DevOps Services API 7.1。支持 dev.azure.com 和 visualstudio.com 地址；保留配置的域名用于请求与导出链接，不强制改写域名。同一组织的两种地址共享凭据身份。
 - 不支持自建 Azure DevOps Server、双向回写、Web/虚拟工作区。远程开发和企业代理仍待专项验收。
 - 只在用户主动执行导入时联网；没有后台轮询、遥测或 AI 上传。
 - 仅向经过校验的 Azure DevOps 云端地址发送 PAT，不跟随重定向；网络错误不输出原始响应或凭据。
