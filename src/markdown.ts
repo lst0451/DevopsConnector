@@ -3,6 +3,9 @@ import { gfm } from 'turndown-plugin-gfm';
 import { Connection, WorkItem } from './types';
 import { workItemUrl } from './validation';
 
+export const CURRENT_RENDERER_VERSION = 3;
+export type RendererVersion = 1 | 2 | 3;
+
 function text(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
@@ -68,7 +71,7 @@ export function htmlToMarkdown(html: string, base: string): string {
   return converter.turndown(html).trim();
 }
 
-export function renderWorkItem(item: WorkItem, connection: Connection, importedAt: Date, rendererVersion: 1 | 2 = 2): string {
+export function renderWorkItem(item: WorkItem, connection: Connection, importedAt: Date, rendererVersion: RendererVersion = CURRENT_RENDERER_VERSION): string {
   const fields = item.fields;
   const assigned = fields['System.AssignedTo'];
   const assignedTo = typeof assigned === 'object' && assigned !== null && 'displayName' in assigned ?
@@ -83,6 +86,7 @@ export function renderWorkItem(item: WorkItem, connection: Connection, importedA
       '> Azure DevOps 需求副本，由 DevOps Connector 管理。请将本地设计与笔记写入独立文件。',
     '- ID：' + item.id,
     '- 修订版本：' + item.rev,
+    ...(rendererVersion >= 3 ? ['- 导出模板版本：' + rendererVersion] : []),
     '- 类型：' + inline(fields['System.WorkItemType']),
     '- 状态：' + inline(fields['System.State']),
     '- 负责人：' + (inline(assignedTo) || '（未分配）'),
@@ -93,7 +97,9 @@ export function renderWorkItem(item: WorkItem, connection: Connection, importedA
     '- 本地导入时间：' + importedAt.toISOString(),
     '',
     section('描述', 'System.Description'),
+    ...(rendererVersion >= 3 ? [section('需求规格（Specifications）', 'Custom.Specifications')] : []),
     section('验收标准', 'Microsoft.VSTS.Common.AcceptanceCriteria'),
+    ...(rendererVersion >= 3 ? [section('设计说明（Design）', 'Custom.Design')] : []),
     section('复现步骤', 'Microsoft.VSTS.TCM.ReproSteps'),
     '> 评论、附件和历史未导入；图片仅保留链接。',
   ].join('\n\n') + '\n';

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { renderWorkItem } from '../src/markdown';
-import { digest, LOCK_FILE, PENDING_FILE, STATE_FILE } from '../src/syncModel';
+import { describeChanges, digest, LOCK_FILE, PENDING_FILE, readExistingExport, STATE_FILE } from '../src/syncModel';
 import { SyncRepository } from '../src/syncRepository';
 import { ExistingFileMismatch, SyncService } from '../src/syncService';
 import { Connection, UserError, WorkItem } from '../src/types';
@@ -56,7 +56,7 @@ test('new import creates verified tracking state without persisting PAT', async 
   const { state, local } = await s.service.inspect(42);
   assert.equal(state.revision, 1);
   assert.equal(state.hash, digest(local!));
-  assert.equal(state.rendererVersion, 2);
+  assert.equal(state.rendererVersion, 3);
   assert.equal(state.status, 'synced');
   assert.doesNotMatch(await fs.readFile(path.join(s.directory, STATE_FILE), 'utf8'), /test-token-secret/);
   assert.deepEqual((await fs.readdir(s.directory)).sort(), [STATE_FILE, 'workitem.md'].sort());
@@ -170,7 +170,7 @@ test('legacy file is verified against its historical revision, keeps CRLF and is
   const plan = await s.service.check(42, 'not-real', clean);
   assert.equal(plan.next.revision, 4);
   await s.service.apply(plan, guard);
-  assert.equal((await s.service.inspect(42)).state.rendererVersion, 2);
+  assert.equal((await s.service.inspect(42)).state.rendererVersion, 3);
 });
 
 test('legacy local modifications cannot become a trusted baseline', async (t) => {
@@ -320,4 +320,94 @@ test('journal written before file commit is abandoned without modifying the orig
   assert.equal(state.revision, 1);
   assert.equal(local, plan.previous.baseline);
   await assert.rejects(fs.stat(path.join(s.directory, PENDING_FILE)), { code: 'ENOENT' });
+});
+
+for (const version of [1, 2] as const) {
+  test('template ' + version + ' upgrades at unchanged revision 73 exactly once', async (t) => {
+    const s = await setup(t);
+    const remote = fixture(73);
+    remote.fields['Custom.Specifications'] = '<p>完整的需求规格</p>';
+    remote.fields['Custom.Design'] = '<p>对应的设计说明</p>';
+    s.client.latest = remote;
+    s.client.getWorkItemRevision = async () => remote;
+    await fs.mkdir(s.directory, { recursive: true });
+    const old = renderWorkItem(remote, connection, now(), version);
+    await fs.writeFile(s.file, old);
+    await fs.writeFile(path.join(s.directory, 'design.md'), 'local design notes');
+    await s.service.trackExisting(42, 'not-real', guard);
+    const listed = (await s.service.list())[0];
+    assert.equal(listed?.status, 'updateAvailable');
+    assert.match(listed?.detail ?? '', /导出模板需升级/);
+    const plan = await s.service.check(42, 'not-real', clean);
+    assert.equal(plan.changed, true);
+    assert.equal(plan.revisionChanged, false);
+    assert.equal(plan.templateChanged, true);
+    assert.equal(plan.next.revision, 73);
+    assert.equal(plan.next.rendererVersion, 3);
+    assert.match(describeChanges(plan), /导出模板/);
+    assert.doesNotMatch(describeChanges(plan), /73 → 73/);
+    assert.match(plan.next.baseline, /完整的需求规格/);
+    assert.match(plan.next.baseline, /对应的设计说明/);
+    assert.equal(await fs.readFile(s.file, 'utf8'), old, 'checking must not rewrite the old file');
+    assert.equal((await s.service.inspect(42)).state.rendererVersion, version);
+    await s.service.apply(plan, guard);
+    assert.equal((await s.service.inspect(42)).state.rendererVersion, 3);
+    assert.equal(await fs.readFile(path.join(s.directory, 'design.md'), 'utf8'), 'local design notes');
+    const upgraded = await fs.readFile(s.file, 'utf8');
+    const stat = await fs.stat(s.file);
+    const again = await s.service.check(42, 'not-real', clean);
+    assert.equal(again.changed, false);
+    assert.equal(again.templateChanged, false);
+    await s.service.apply(again, guard);
+    assert.equal(await fs.readFile(s.file, 'utf8'), upgraded);
+    assert.equal((await fs.stat(s.file)).mtimeMs, stat.mtimeMs);
+  });
+}
+
+test('template-only upgrade still refuses saved and unsaved local edits', async (t) => {
+  const s = await setup(t);
+  await fs.mkdir(s.directory, { recursive: true });
+  await fs.writeFile(s.file, renderWorkItem(fixture(), connection, now(), 1));
+  await s.service.trackExisting(42, 'not-real', guard);
+  const dirtyPlan = await s.service.check(42, 'not-real', () => true);
+  assert.equal(dirtyPlan.templateChanged, true);
+  assert.equal(dirtyPlan.conflict, true);
+  await assert.rejects(s.service.apply(dirtyPlan, guard), /本地修改/);
+  await fs.appendFile(s.file, '\n保留我的本地笔记');
+  const editedPlan = await s.service.check(42, 'not-real', clean);
+  assert.equal(editedPlan.conflict, true);
+  await assert.rejects(s.service.apply(editedPlan, guard), /本地修改/);
+  assert.match(await fs.readFile(s.file, 'utf8'), /保留我的本地笔记/);
+  assert.equal((await s.service.inspect(42)).state.rendererVersion, 1);
+});
+
+test('a second window cannot apply a stale template-only upgrade', async (t) => {
+  const s = await setup(t);
+  await fs.mkdir(s.directory, { recursive: true });
+  await fs.writeFile(s.file, renderWorkItem(fixture(), connection, now(), 2));
+  await s.service.trackExisting(42, 'not-real', guard);
+  const first = await s.service.check(42, 'not-real', clean);
+  const second = await s.service.check(42, 'not-real', clean);
+  await s.service.apply(first, guard);
+  await assert.rejects(s.service.apply(second, guard), /其他窗口/);
+});
+
+test('remote and template upgrades report both reasons', async (t) => {
+  const s = await setup(t);
+  await fs.mkdir(s.directory, { recursive: true });
+  await fs.writeFile(s.file, renderWorkItem(fixture(), connection, now(), 1));
+  await s.service.trackExisting(42, 'not-real', guard);
+  s.client.latest = fixture(2);
+  const plan = await s.service.check(42, 'not-real', clean);
+  assert.equal(plan.revisionChanged, true);
+  assert.equal(plan.templateChanged, true);
+  assert.match(describeChanges(plan), /远端修订 1 → 2/);
+  assert.match(describeChanges(plan), /导出模板 1 → 3/);
+});
+
+test('explicit renderer version allows reattachment and rejects unsupported versions', () => {
+  const exported = renderWorkItem(fixture(), connection, now());
+  assert.equal(readExistingExport(exported, 42, connection).rendererVersion, 3);
+  assert.throws(() => readExistingExport(exported.replace('导出模板版本：3', '导出模板版本：999'),
+    42, connection), /导出模板版本无法识别/);
 });

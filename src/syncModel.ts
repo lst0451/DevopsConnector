@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Connection, UserError } from './types';
+import { RendererVersion } from './markdown';
 import { normalizeOrganization, organizationIdentity, parseOrganizationInput, parseWorkItemInput, validateId, validateProject } from './validation';
 
 export const STATE_FILE = '.devops-sync.json';
@@ -12,7 +13,7 @@ export interface SyncState {
   connection: Connection;
   title: string;
   revision: number;
-  rendererVersion: 1 | 2;
+  rendererVersion: RendererVersion;
   baseline: string;
   hash: string;
   exportedAt: string;
@@ -29,7 +30,17 @@ export interface SyncPlan {
   next: SyncState;
   local: string | undefined;
   changed: boolean;
+  revisionChanged: boolean;
+  templateChanged: boolean;
   conflict: boolean;
+}
+export function describeChanges(plan: SyncPlan): string {
+  const changes: string[] = [];
+  if (plan.revisionChanged) { changes.push('远端修订 ' + plan.previous.revision + ' → ' + plan.next.revision); }
+  if (plan.templateChanged) {
+    changes.push('导出模板 ' + plan.previous.rendererVersion + ' → ' + plan.next.rendererVersion + '（补全文档内容）');
+  }
+  return changes.join('；');
 }
 export function digest(text: string): string { return createHash('sha256').update(text, 'utf8').digest('hex'); }
 export function sameSource(a: Connection, b: Connection): boolean {
@@ -51,7 +62,7 @@ export function parseState(value: unknown, id: number): SyncState {
   if (!isObject(value) || value.schema !== 1 || value.id !== id || !isObject(value.connection) ||
     typeof value.connection.organizationUrl !== 'string' || typeof value.connection.project !== 'string' ||
     typeof value.title !== 'string' || !Number.isInteger(value.revision) || (value.revision as number) < 1 ||
-    ![1, 2].includes(value.rendererVersion as number) || typeof value.baseline !== 'string' ||
+    ![1, 2, 3].includes(value.rendererVersion as number) || typeof value.baseline !== 'string' ||
     value.hash !== digest(value.baseline) || !isTime(value.exportedAt) ||
     (value.checkedAt !== undefined && !isTime(value.checkedAt)) ||
     (value.attemptedAt !== undefined && !isTime(value.attemptedAt)) ||
@@ -72,7 +83,7 @@ export function parsePending(value: unknown, id: number): PendingWrite {
   return { schema: 1, beforeHash: value.beforeHash as string | null, after: parseState(value.after, id) };
 }
 
-export interface ExistingExport { revision: number; importedAt: Date; connection: Connection; rendererVersion: 1 | 2 }
+export interface ExistingExport { revision: number; importedAt: Date; connection: Connection; rendererVersion: RendererVersion }
 export function readExistingExport(markdown: string, id: number, connection: Connection): ExistingExport {
   const normalized = markdown.replace(/\r\n/g, '\n');
   const header = normalized.split('\n## 描述')[0] ?? '';
@@ -82,6 +93,10 @@ export function readExistingExport(markdown: string, id: number, connection: Con
   const importedAt = /^- 本地导入时间：(.+)$/m.exec(header)?.[1];
   const legacy = header.includes('> Azure DevOps 需求副本。请将本地设计与笔记写入独立文件；此版本仅支持首次导入。');
   const modern = header.includes('> Azure DevOps 需求副本，由 DevOps Connector 管理。请将本地设计与笔记写入独立文件。');
+  const declaredTemplate = /^- 导出模板版本：(.*)$/m.exec(header)?.[1];
+  if (declaredTemplate !== undefined && (declaredTemplate !== '3' || !modern || legacy)) {
+    throw new UserError('导出模板版本无法识别，不能安全接入跟踪。请保留原文件。');
+  }
   if (Number(number) !== id || !revision || !source || !importedAt || !isTime(importedAt) || (!legacy && !modern)) {
     throw new UserError('无法识别原始导出文件的来源、修订和导入时间，不能安全建立跟踪基线。');
   }
@@ -91,6 +106,6 @@ export function readExistingExport(markdown: string, id: number, connection: Con
   return {
     revision: validateId(revision), importedAt: new Date(importedAt),
     connection: { organizationUrl: parsed.organizationUrl, project: parsed.project },
-    rendererVersion: legacy ? 1 : 2,
+    rendererVersion: declaredTemplate === '3' ? 3 : legacy ? 1 : 2,
   };
 }

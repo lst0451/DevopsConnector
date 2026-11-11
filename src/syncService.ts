@@ -1,11 +1,11 @@
 import { AzureDevOpsClient } from './azureDevOpsClient';
-import { renderWorkItem } from './markdown';
+import { CURRENT_RENDERER_VERSION, renderWorkItem } from './markdown';
 import { SyncRepository } from './syncRepository';
 import { assertSource, digest, readExistingExport, SyncPlan, SyncState, SyncStatus } from './syncModel';
 import { Connection, UserError, WorkItem } from './types';
 
 type Client = Pick<AzureDevOpsClient, 'getWorkItem' | 'getWorkItemRevision'>;
-export interface TrackedItem { id: number; title: string; status: SyncStatus; revision?: number; checkedAt?: string; detail: string }
+export interface TrackedItem { id: number; title: string; status: SyncStatus; revision?: number; rendererVersion?: number; checkedAt?: string; detail: string }
 export class ExistingFileMismatch extends UserError {
   constructor(readonly local: string, readonly expected: string) {
     super('本地文件与对应的历史修订不一致，可能有本地修改。未建立跟踪；请先保留笔记并核对差异。');
@@ -21,7 +21,7 @@ function cancelled(signal?: AbortSignal): void {
 function makeState(item: WorkItem, connection: Connection, now: string): SyncState {
   const baseline = renderWorkItem(item, connection, new Date(now));
   return {
-    schema: 1, id: item.id, connection, title: title(item), revision: item.rev, rendererVersion: 2,
+    schema: 1, id: item.id, connection, title: title(item), revision: item.rev, rendererVersion: CURRENT_RENDERER_VERSION,
     baseline, hash: digest(baseline), exportedAt: now, checkedAt: now, attemptedAt: now, status: 'synced',
   };
 }
@@ -95,13 +95,15 @@ export class SyncService {
       const checkedAt = this.now().toISOString();
       const document = await local.readDocument();
       const conflict = document === undefined || digest(document) !== state.hash || isDirty();
-      const changed = item.rev !== state.revision;
+      const revisionChanged = item.rev !== state.revision;
+      const templateChanged = state.rendererVersion < CURRENT_RENDERER_VERSION;
+      const changed = revisionChanged || templateChanged;
       const next = changed ? makeState(item, this.connection, checkedAt) : state;
       await local.writeState({
         ...state, attemptedAt, checkedAt, error: undefined,
         status: conflict ? 'conflict' : changed ? 'updateAvailable' : 'unchanged',
       });
-      return { id, expectedHash: state.hash, previous: state, next, local: document, changed, conflict };
+      return { id, expectedHash: state.hash, previous: state, next, local: document, changed, revisionChanged, templateChanged, conflict };
     });
   }
 
@@ -112,7 +114,8 @@ export class SyncService {
       if (!state) { throw new UserError('跟踪记录已被移除，请重新检查。'); }
       assertSource(state, this.connection);
       assertSource(plan.next, this.connection);
-      if (state.hash !== plan.expectedHash || state.revision !== plan.previous.revision) {
+      if (state.hash !== plan.expectedHash || state.revision !== plan.previous.revision ||
+          state.rendererVersion !== plan.previous.rendererVersion) {
         throw new UserError('其他窗口已更新此任务，请重新检查。');
       }
       const document = await local.readDocument();
@@ -131,10 +134,12 @@ export class SyncService {
       try {
         const { state, local } = await this.inspect(id);
         const conflict = local === undefined || digest(local) !== state.hash;
+        const templateChanged = state.rendererVersion < CURRENT_RENDERER_VERSION;
         result.push({
-          id, title: state.title, revision: state.revision, checkedAt: state.checkedAt,
-          status: conflict ? 'conflict' : state.status,
-          detail: conflict ? '本地文件已修改或缺失' : state.error ?? '',
+          id, title: state.title, revision: state.revision, rendererVersion: state.rendererVersion, checkedAt: state.checkedAt,
+          status: conflict ? 'conflict' : state.status === 'error' ? 'error' : templateChanged ? 'updateAvailable' : state.status,
+          detail: conflict ? '本地文件已修改或缺失' : [state.error,
+            templateChanged ? '导出模板需升级至 ' + CURRENT_RENDERER_VERSION + '，请执行同步补全内容' : undefined].filter(Boolean).join('；'),
         });
       } catch (error) {
         result.push({ id, title: '', status: 'error',

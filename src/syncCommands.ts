@@ -6,13 +6,13 @@ import { chooseFolder, readSettings, tokenKey } from './configuration';
 import { importFilePath } from './storage';
 import { SyncRepository } from './syncRepository';
 import { ExistingFileMismatch, SyncService, TrackedItem } from './syncService';
-import { SyncPlan } from './syncModel';
+import { describeChanges, SyncPlan } from './syncModel';
 import { parseWorkItemInput } from './validation';
 import { UserError } from './types';
 
 type Register = (id: string, action: () => Promise<void>) => void;
 type Session = { folder: vscode.WorkspaceFolder; settings: ReturnType<typeof readSettings>; service: SyncService };
-const labels = { synced: '已建立基线', unchanged: '已是最新', updateAvailable: '有更新', conflict: '本地已修改/缺失', error: '错误' };
+const labels = { synced: '已建立基线', unchanged: '修订和模板均为最新', updateAvailable: '有更新', conflict: '本地已修改/缺失', error: '错误' };
 function pathKey(file: string): string {
   const normalized = path.resolve(file);
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
@@ -79,6 +79,7 @@ export function registerSyncCommands(context: vscode.ExtensionContext, client: A
       label: '#' + item.id + ' ' + item.title,
       description: labels[isDirty(current, item.id) ? 'conflict' : item.status],
       detail: (item.revision === undefined ? '' : '本地修订 ' + item.revision + ' · ') +
+        (item.rendererVersion === undefined ? '' : '导出模板 ' + item.rendererVersion + ' · ') +
         (item.checkedAt ? '上次成功检查 ' + item.checkedAt : '尚未检查最新版本') +
         (item.detail ? ' · ' + item.detail : ''),
       item,
@@ -98,7 +99,7 @@ export function registerSyncCommands(context: vscode.ExtensionContext, client: A
     const left = plan.local === undefined ? snapshot('（本地文件缺失）\n', 'missing.md') : target(current, plan.id);
     const right = snapshot(plan.next.baseline, 'remote-' + plan.next.revision + '.md');
     await vscode.commands.executeCommand('vscode.diff', left, right,
-      '#' + plan.id + ' 本地 ↔ 远端修订 ' + plan.next.revision, { preview: true });
+      '#' + plan.id + ' 本地 ↔ 待同步文档（修订 ' + plan.next.revision + '，模板 ' + plan.next.rendererVersion + '）', { preview: true });
   };
   const check = async (current: Session, id: number) => {
     const pat = await token(current);
@@ -113,9 +114,13 @@ export function registerSyncCommands(context: vscode.ExtensionContext, client: A
       }
       return;
     }
-    if (!plan.changed) { await vscode.window.showInformationMessage('#' + id + ' 已是最新，未重写文件。'); return; }
+    if (!plan.changed) {
+      await vscode.window.showInformationMessage('#' + id + '：远端修订 ' + plan.next.revision +
+        ' 和导出模板 ' + plan.next.rendererVersion + ' 均无变化，未重写文件。');
+      return;
+    }
     let choice = await vscode.window.showInformationMessage(
-      '#' + id + '：修订 ' + plan.previous.revision + ' → ' + plan.next.revision + '。是否更新本地需求副本？',
+      '#' + id + '：' + describeChanges(plan) + '。是否更新本地需求副本？',
       { modal: true }, '查看差异', '同步');
     if (choice === '查看差异') {
       await showPlan(current, plan);
@@ -123,7 +128,7 @@ export function registerSyncCommands(context: vscode.ExtensionContext, client: A
     }
     if (choice !== '同步') { return; }
     await current.service.apply(plan, () => guard(current, id));
-    await vscode.window.showInformationMessage('#' + id + ' 已同步到修订 ' + plan.next.revision + '。');
+    await vscode.window.showInformationMessage('#' + id + ' 已同步（修订 ' + plan.next.revision + '，导出模板 ' + plan.next.rendererVersion + '）。');
   };
 
   register('devopsConnector.importWorkItem', async () => {
@@ -210,10 +215,10 @@ export function registerSyncCommands(context: vscode.ExtensionContext, client: A
           const plan = await current.service.check(item.id, pat, () => isDirty(current, item.id), signal);
           if (signal.aborted) { wasCancelled = true; report.push('已取消：剩余任务未处理。'); break; }
           if (plan.conflict) { counts.conflict++; report.push('#' + item.id + ' 跳过：本地修改或文件缺失'); }
-          else if (!plan.changed) { counts.unchanged++; report.push('#' + item.id + ' 无变化'); }
+          else if (!plan.changed) { counts.unchanged++; report.push('#' + item.id + ' 修订和导出模板均无变化'); }
           else {
             await current.service.apply(plan, () => guard(current, item.id));
-            counts.updated++; report.push('#' + item.id + ' 已同步至修订 ' + plan.next.revision);
+            counts.updated++; report.push('#' + item.id + ' 已同步：' + describeChanges(plan));
           }
         } catch (error) {
           if (signal.aborted) { wasCancelled = true; report.push('已取消：剩余任务未处理。'); break; }

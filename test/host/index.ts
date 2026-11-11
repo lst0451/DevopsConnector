@@ -6,7 +6,7 @@ export async function run(): Promise<void> {
   assert.ok(extension, 'Development extension is discoverable');
   await extension.activate();
   assert.equal(extension.isActive, true);
-  assert.equal(extension.packageJSON.version, '0.2.0');
+  assert.equal(extension.packageJSON.version, '0.2.1');
   const commands = await vscode.commands.getCommands(true);
   const declared = extension.packageJSON.contributes.commands as { command: string }[];
   assert.equal(declared.length, 11);

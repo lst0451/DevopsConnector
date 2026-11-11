@@ -52,3 +52,39 @@ test('handles empty tables and preserves heading tables', () => {
   assert.match(result, /---/);
   assert.ok(result.includes('A \\| B'));
 });
+
+test('current template exports Specifications and Design without conflating acceptance criteria', () => {
+  const result = renderWorkItem({ id: 42, rev: 73, fields: {
+    'Custom.Specifications': '<h3>规格明细</h3><p><strong>金额规则</strong></p>',
+    'Custom.Design': '<p>设计实现说明</p>',
+    'Microsoft.VSTS.Common.AcceptanceCriteria': '<p>独立验收条件</p>',
+  } }, connection, new Date('2026-11-11T12:00:00Z'));
+  for (const expected of ['导出模板版本：3', '需求规格（Specifications）', '规格明细',
+    '**金额规则**', '设计说明（Design）', '设计实现说明', '独立验收条件']) {
+    assert.ok(result.includes(expected), expected);
+  }
+});
+
+test('legacy templates keep the original shape and omit newly supported custom fields', () => {
+  for (const version of [1, 2] as const) {
+    const result = renderWorkItem({ id: 42, rev: 73, fields: {
+      'Custom.Specifications': '<p>新字段内容</p>', 'Custom.Design': '<p>新设计内容</p>',
+    } }, connection, new Date('2026-11-11T12:00:00Z'), version);
+    assert.doesNotMatch(result, /导出模板版本|Specifications|Design|新字段内容|新设计内容/);
+    assert.ok(result.includes('此版本仅支持首次导入') === (version === 1));
+  }
+});
+
+test('missing custom fields remain explicit and custom HTML receives safety conversion', () => {
+  const empty = renderWorkItem({ id: 42, rev: 1, fields: {} }, connection, new Date());
+  assert.match(empty, /## 需求规格（Specifications）\n\n（未提供）/);
+  assert.match(empty, /## 设计说明（Design）\n\n（未提供）/);
+  const result = renderWorkItem({ id: 42, rev: 1, fields: {
+    'Custom.Specifications': '<script>unsafe()</script><a href="command:evil">规则</a>' +
+      '<table><tr><td>表格内容</td></tr></table>',
+    'Custom.Design': '<img src="https://example.com/design.png" alt="设计图">',
+  } }, connection, new Date());
+  assert.doesNotMatch(result, /unsafe\(\)|command:|<table|!\[/);
+  assert.match(result, /表格内容/);
+  assert.match(result, /设计图（远端图片）/);
+});

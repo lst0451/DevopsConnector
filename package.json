@@ -2,7 +2,7 @@
   "name": "devops-connector",
   "displayName": "DevOps Connector",
   "description": "Import, track and safely synchronize Azure DevOps work items as local Markdown.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "devops-connector-local",
   "private": true,
   "license": "UNLICENSED",
@@ -52,7 +52,7 @@
     "watch": "node scripts/build.mjs --watch",
     "test": "tsc && node --test out/test/*.test.js",
     "vscode:prepublish": "npm run check && node scripts/build.mjs --production",
-    "package": "vsce package --allow-missing-repository --skip-license --out work/devops-connector-0.2.0.vsix"
+    "package": "vsce package --allow-missing-repository --skip-license --out work/devops-connector-0.2.1.vsix"
   },
   "dependencies": { "turndown": "7.2.5", "turndown-plugin-gfm": "1.0.2" },
   "devDependencies": {
