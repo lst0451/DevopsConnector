@@ -1,0 +1,16 @@
+.vscode/**
+.npm-cache/**
+.vscode-test/**
+src/**
+test/**
+out/**
+node_modules/**
+scripts/**
+work/**
+.gitignore
+.gitattributes
+.npmrc
+tsconfig.json
+package-lock.json
+docs/**
+dist/**/*.map
