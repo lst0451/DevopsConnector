@@ -1,0 +1,13 @@
+node_modules/
+dist/
+out/
+.npm-cache/
+.vscode-test/
+work/
+*.vsix
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+.vscode/
