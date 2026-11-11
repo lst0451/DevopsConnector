@@ -68,7 +68,7 @@ export function htmlToMarkdown(html: string, base: string): string {
   return converter.turndown(html).trim();
 }
 
-export function renderWorkItem(item: WorkItem, connection: Connection, importedAt: Date): string {
+export function renderWorkItem(item: WorkItem, connection: Connection, importedAt: Date, rendererVersion: 1 | 2 = 2): string {
   const fields = item.fields;
   const assigned = fields['System.AssignedTo'];
   const assignedTo = typeof assigned === 'object' && assigned !== null && 'displayName' in assigned ?
@@ -78,7 +78,9 @@ export function renderWorkItem(item: WorkItem, connection: Connection, importedA
     '## ' + name + '\n\n' + (htmlToMarkdown(text(fields[field]), source) || '（未提供）');
   return [
     '# ' + item.id + ' — ' + inline(fields['System.Title']),
-    '> Azure DevOps 需求副本。请将本地设计与笔记写入独立文件；此版本仅支持首次导入。',
+    rendererVersion === 1 ?
+      '> Azure DevOps 需求副本。请将本地设计与笔记写入独立文件；此版本仅支持首次导入。' :
+      '> Azure DevOps 需求副本，由 DevOps Connector 管理。请将本地设计与笔记写入独立文件。',
     '- ID：' + item.id,
     '- 修订版本：' + item.rev,
     '- 类型：' + inline(fields['System.WorkItemType']),

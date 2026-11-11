@@ -6,6 +6,16 @@ const connection = { organizationUrl: 'https://dev.azure.com/example', project: 
 const fixture = { id: 42, rev: 3, fields: { 'System.TeamProject': 'My Project', 'System.Title': 'Test' } };
 const jsonResponse = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
 
+test('requests the exact historical revision and validates the response revision', async () => {
+  const client = new AzureDevOpsClient(async (url) => {
+    assert.equal(url, 'https://dev.azure.com/example/My%20Project/_apis/wit/workitems/42/revisions/3?api-version=7.1');
+    return jsonResponse(fixture);
+  });
+  assert.deepEqual(await client.getWorkItemRevision(connection, 42, 3, 'not-real'), fixture);
+  const wrong = new AzureDevOpsClient(async () => jsonResponse({ ...fixture, rev: 4 }));
+  await assert.rejects(wrong.getWorkItemRevision(connection, 42, 3, 'not-real'), /历史修订号不一致/);
+});
+
 test('sends the API request directly to the configured visualstudio hostname', async () => {
   const client = new AzureDevOpsClient(async (url, options) => {
     assert.equal(url, 'https://vffice.visualstudio.com/My%20Project/_apis/wit/workitems/42?api-version=7.1');

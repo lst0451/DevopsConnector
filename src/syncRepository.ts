@@ -1,0 +1,169 @@
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { UserError } from './types';
+import { validateDirectory, validateId } from './validation';
+import { digest, LOCK_FILE, parsePending, parseState, PENDING_FILE, PendingWrite, sameSource, STATE_FILE, SyncState } from './syncModel';
+
+const MAX_FILE_SIZE = 32 * 1024 * 1024;
+function code(error: unknown, expected: string): boolean {
+  return error instanceof Error && 'code' in error && error.code === expected;
+}
+async function safeRead(file: string): Promise<string | undefined> {
+  try {
+    const stat = await fs.lstat(file);
+    if (stat.isSymbolicLink() || !stat.isFile() || stat.size > MAX_FILE_SIZE) {
+      throw new UserError('同步文件不是普通文件、包含链接或超过大小限制，已停止操作。');
+    }
+    return await fs.readFile(file, 'utf8');
+  } catch (error) { if (code(error, 'ENOENT')) { return undefined; } throw error; }
+}
+function json(text: string): unknown {
+  try { return JSON.parse(text); }
+  catch { throw new UserError('同步状态或恢复记录不是有效 JSON，已停止操作。'); }
+}
+async function safeDirectory(root: string, parts: string[], create: boolean): Promise<string | undefined> {
+  let directory = await fs.realpath(root);
+  for (const part of parts) {
+    directory = path.join(directory, part);
+    if (create) {
+      try { await fs.mkdir(directory); }
+      catch (error) { if (!code(error, 'EEXIST')) { throw error; } }
+    }
+    let stat;
+    try { stat = await fs.lstat(directory); }
+    catch (error) { if (code(error, 'ENOENT')) { return undefined; } throw error; }
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      throw new UserError('同步目录包含符号链接、目录联接或非目录项，已停止操作。');
+    }
+  }
+  return directory;
+}
+async function atomicWrite(file: string, content: string, exclusive = false, beforePublish?: () => Promise<void>): Promise<void> {
+  await safeRead(file); // Reject symlinks even for replacement.
+  const temporary = path.join(path.dirname(file), '.devops-write-' + randomUUID() + '.tmp');
+  const handle = await fs.open(temporary, 'wx', 0o600);
+  try {
+    try { await handle.writeFile(content, 'utf8'); await handle.sync(); }
+    finally { await handle.close(); }
+    await beforePublish?.();
+    if (exclusive) { await fs.link(temporary, file); }
+    else { await fs.rename(temporary, file); }
+  } finally { await fs.unlink(temporary).catch(() => undefined); }
+}
+
+export class LockedItem {
+  constructor(readonly directory: string, readonly id: number,
+    private readonly afterDocumentWrite?: () => Promise<void>) {}
+  get file(): string { return path.join(this.directory, 'workitem.md'); }
+  readDocument(): Promise<string | undefined> { return safeRead(this.file); }
+  async state(): Promise<SyncState | undefined> {
+    const value = await safeRead(path.join(this.directory, STATE_FILE));
+    return value === undefined ? undefined : parseState(json(value), this.id);
+  }
+  async writeState(state: SyncState, exclusive = false): Promise<void> {
+    parseState(state, this.id);
+    await atomicWrite(path.join(this.directory, STATE_FILE), JSON.stringify(state, null, 2) + '\n', exclusive);
+  }
+  async recover(): Promise<void> {
+    const file = path.join(this.directory, PENDING_FILE);
+    const text = await safeRead(file);
+    if (text === undefined) { return; }
+    const pending = parsePending(json(text), this.id);
+    const state = await this.state();
+    if ((state && !sameSource(state.connection, pending.after.connection)) ||
+        (state?.hash ?? null) !== pending.beforeHash && state?.hash !== pending.after.hash) {
+      throw new UserError('恢复记录与当前跟踪基线不一致，已保留全部文件。');
+    }
+    const document = await this.readDocument();
+    const hash = document === undefined ? null : digest(document);
+    if (hash === pending.after.hash) {
+      await this.writeState(pending.after);
+    } else if (hash !== pending.beforeHash || (state?.hash ?? null) !== pending.beforeHash) {
+      throw new UserError('上次同步中断后文件又被修改；请保留 pending 和状态文件，先人工核对。');
+    }
+    // No document is ever changed during recovery.
+    await fs.unlink(file);
+  }
+  async commit(next: SyncState, expectedHash: string | null, guard: () => void): Promise<void> {
+    const document = await this.readDocument();
+    if ((document === undefined ? null : digest(document)) !== expectedHash) {
+      throw new UserError('本地文件已变化，已停止覆盖。请重新检查差异。');
+    }
+    const pending: PendingWrite = { schema: 1, beforeHash: expectedHash, after: next };
+    const journal = path.join(this.directory, PENDING_FILE);
+    await atomicWrite(journal, JSON.stringify(pending, null, 2) + '\n', true);
+    const again = await this.readDocument();
+    if ((again === undefined ? null : digest(again)) !== expectedHash) {
+      await fs.unlink(journal);
+      throw new UserError('保存前检测到本地变化，未覆盖。');
+    }
+    try { guard(); }
+    catch (error) { await fs.unlink(journal); throw error; }
+    let rejectedBeforePublish = false;
+    try {
+      await atomicWrite(this.file, next.baseline, expectedHash === null, async () => {
+        try {
+          const latest = await this.readDocument();
+          if ((latest === undefined ? null : digest(latest)) !== expectedHash) {
+            throw new UserError('文件准备期间出现本地修改，未覆盖。');
+          }
+          guard();
+        } catch (error) { rejectedBeforePublish = true; throw error; }
+      });
+    } catch (error) {
+      if (rejectedBeforePublish) { await fs.unlink(journal); }
+      throw error;
+    }
+    await this.afterDocumentWrite?.();
+    await this.writeState(next, expectedHash === null);
+    await fs.unlink(journal);
+  }
+  async untrack(): Promise<void> {
+    await fs.unlink(path.join(this.directory, STATE_FILE));
+  }
+}
+
+export class SyncRepository {
+  constructor(readonly root: string, readonly saveDirectory: string,
+    private readonly afterDocumentWrite?: () => Promise<void>) { validateDirectory(saveDirectory); }
+  async withItem<T>(id: number, create: boolean, action: (item: LockedItem) => Promise<T>): Promise<T> {
+    validateId(String(id));
+    const directory = await safeDirectory(this.root, [...validateDirectory(this.saveDirectory), String(id)], create);
+    if (!directory) { throw new UserError('本地 Work Item 目录不存在，请先导入或检查保存目录配置。'); }
+    const lock = path.join(directory, LOCK_FILE);
+    let handle;
+    try { handle = await fs.open(lock, 'wx', 0o600); }
+    catch (error) {
+      if (code(error, 'EEXIST')) {
+        throw new UserError('此任务已有同步锁，可能正在其他窗口操作。若上次异常退出，请关闭相关窗口后按手动验收文档恢复；不要直接删除 pending。');
+      }
+      throw error;
+    }
+    try {
+      await handle.writeFile(JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }));
+      await handle.close();
+      const item = new LockedItem(directory, id, this.afterDocumentWrite);
+      await item.recover();
+      return await action(item);
+    } finally {
+      await handle.close().catch(() => undefined);
+      await fs.unlink(lock);
+    }
+  }
+  async listIds(): Promise<number[]> {
+    const directory = await safeDirectory(this.root, validateDirectory(this.saveDirectory), false);
+    if (!directory) { return []; }
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    const ids: number[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !/^[1-9]\d*$/.test(entry.name) || Number(entry.name) > 2147483647) { continue; }
+      const itemDirectory = await safeDirectory(this.root, [...validateDirectory(this.saveDirectory), entry.name], false);
+      if (itemDirectory && (await safeRead(path.join(itemDirectory, STATE_FILE)) !== undefined ||
+          await safeRead(path.join(itemDirectory, PENDING_FILE)) !== undefined)) {
+        ids.push(Number(entry.name));
+      }
+    }
+    return ids.sort((a, b) => a - b);
+  }
+}

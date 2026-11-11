@@ -24,12 +24,21 @@ export class AzureDevOpsClient {
   constructor(private readonly fetcher: Fetcher = fetch) {}
 
   async getWorkItem(connection: Connection, id: number, token: string, signal?: AbortSignal): Promise<WorkItem> {
+    return this.request(connection, id, token, signal);
+  }
+
+  async getWorkItemRevision(connection: Connection, id: number, revision: number, token: string, signal?: AbortSignal): Promise<WorkItem> {
+    validateId(String(revision));
+    return this.request(connection, id, token, signal, revision);
+  }
+
+  private async request(connection: Connection, id: number, token: string, signal?: AbortSignal, revision?: number): Promise<WorkItem> {
     const organization = normalizeOrganization(connection.organizationUrl);
     const project = validateProject(connection.project);
     validateId(String(id));
     if (!token.trim()) { throw new UserError('请先设置 Personal Access Token。'); }
     const url = organization + '/' + encodeURIComponent(project) +
-      '/_apis/wit/workitems/' + id + '?api-version=7.1';
+      '/_apis/wit/workitems/' + id + (revision === undefined ? '' : '/revisions/' + revision) + '?api-version=7.1';
     const controller = new AbortController();
     const abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
@@ -79,7 +88,9 @@ export class AzureDevOpsClient {
       let data: unknown;
       try { data = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
       catch { throw new UserError('服务返回的 JSON 无法解析。'); }
-      return validateWorkItem(data, id, project);
+      const item = validateWorkItem(data, id, project);
+      if (revision !== undefined && item.rev !== revision) { throw new UserError('返回的历史修订号不一致，已停止操作。'); }
+      return item;
     } catch (error) {
       if (signal?.aborted) { throw new UserError('已取消导入。'); }
       if (error instanceof UserError) { throw error; }

@@ -2,11 +2,11 @@
 
 将 Azure DevOps Work Item 导入当前 VS Code 项目，作为本地 Markdown 需求副本。
 
-## 当前状态：第一阶段 / 0.1.0
+## 当前状态：第二阶段 / 0.2.0
 
-已实现：项目级连接与目录配置、PAT 安全存储、通过 ID/链接导入单个 Work Item、Markdown 转换、安全保存。
+已实现：项目级连接与目录配置、PAT 安全存储、导入与跟踪、手动同步、只读差异预览、本地修改保护和中断恢复。
 
-尚未实现：已跟踪列表、重新同步、变更对比、定时检查、侧边栏、评论和附件下载。**重复导入会拒绝覆盖，不等于更新同步。**
+尚未实现：定时检查、侧边栏、评论和附件下载。跟踪列表目前通过命令面板访问；没有后台自动更新。
 
 ## 开发与调试
 
@@ -36,7 +36,7 @@ npm run compile
    - 不要将 PAT 粘贴进 settings.json、源代码、终端命令或 Git。
 3. **DevOps Connector: Import Work Item**
    - 输入 ID，例如 21835，或者完整 Work Item 链接。
-   - 导入完成后自动打开本地文件。
+   - 导入完成后自动打开本地文件，并建立同步跟踪。已有文件不会被重复导入覆盖。
 
 配置命令只保存配置，不声称连接已验证。首次成功导入才验证当前凭据对该 Work Item 的读取权限。
 
@@ -44,13 +44,37 @@ PAT 按“工作区文件夹 + 组织”保存在 VS Code SecretStorage。可通
 
 多根工作区每次操作都明确选择目标文件夹。配置保存在该文件夹的 VS Code 设置中，凭据不随配置共享。
 
+## 已导出文件的升级与同步
+
+原 0.1.0 导出文件不能直接当作可信同步基线。保持原项目配置和保存目录不变，执行：
+
+1. **DevOps Connector: Track Existing Work Item**，输入原 Work Item ID，例如 21835。
+2. 插件读取文档记录的历史修订，使用当时的导出格式和时间重建内容并逐字核对（允许 CRLF/LF 差异）。匹配后只新增跟踪记录，不改动原 Markdown。
+3. 执行 **DevOps Connector: Sync Work Item**，选择任务，查看差异并确认同步。远端无新修订时不重写 Markdown。
+
+若文件有本地修改或无法获取历史修订，接入会停止；先备份设计/笔记并核对差异，不会把自定义内容静默纳入可覆盖基线。旧版本提示语会保留到首次实际更新时。
+
+| 命令 | 行为 |
+|---|---|
+| Show Tracked Work Items | 查看当前保存目录的任务、修订、检查时间与状态；选择任务后可打开或同步 |
+| Sync Work Item | 检查单项，确认后更新；可先看差异 |
+| Sync All Work Items | 批量确认后更新无本地修改的任务；跳过冲突与错误，提供汇总 |
+| View Remote Changes | 仅检查并预览本地与远端差异，不修改需求文件 |
+| Compare with Last Synced Version | 离线比较上次成功同步基线与当前本地文件 |
+| Stop Tracking Work Item | 确认后仅删除跟踪基线；保留需求、设计与笔记 |
+
+发现本地修改、未保存编辑或目标文件缺失时，不自动覆盖或重建。可先用 Compare with Last Synced Version 将笔记移到独立文件，再手动恢复基线文本并保存，重新检查同步；插件没有“强制覆盖”按钮。
+
+“已建立基线”不代表已检查最新版本；“有更新”不代表已写入本地。只有文档和跟踪记录提交成功后才报告同步成功。
+
 ## 保存结果
 
 ~~~text
 目标项目/
 └── docs/workitems/
     └── 21835/
-        ├── workitem.md       插件生成
+        ├── workitem.md       插件管理的需求副本
+        ├── .devops-sync.json 同步来源、完整基线、哈希及检查状态
         ├── design.md         可自行创建，插件不管理
         └── notes.md          可自行创建，插件不管理
 ~~~
@@ -63,13 +87,15 @@ PAT 按“工作区文件夹 + 组织”保存在 VS Code SecretStorage。可通
 
 - 只读 Azure DevOps Services API 7.1。支持 dev.azure.com 和 visualstudio.com 地址；保留配置的域名用于请求与导出链接，不强制改写域名。同一组织的两种地址共享凭据身份。
 - 不支持自建 Azure DevOps Server、双向回写、Web/虚拟工作区。远程开发和企业代理仍待专项验收。
-- 只在用户主动执行导入时联网；没有后台轮询、遥测或 AI 上传。
+- 只在用户主动导入、接入跟踪或检查/同步时联网；没有后台轮询、遥测或 AI 上传。
 - 仅向经过校验的 Azure DevOps 云端地址发送 PAT，不跟随重定向；网络错误不输出原始响应或凭据。
 - 要求可信工作区。保存目录禁止绝对路径、父目录跳转、保留名称和目录中的符号链接/目录联接。
-- 完整临时文件写好后以独占硬链接方式发布；文件系统不支持硬链接时失败，不退回覆盖写入。
-- 已有 workitem.md、其他本地文件及未保存的目标编辑不被主动覆盖。没有锁定其他进程的文件系统操作，不能防御恶意进程同时替换目录。
+- 首次创建以独占硬链接发布；更新采用同目录临时文件与原子替换。文件系统不支持所需能力时失败，不退回直接截断写入。
+- 同步仅更新基线哈希仍匹配的 workitem.md；保存前再次检查哈希与编辑器未保存状态。每项文件锁协调插件的多个窗口；不能保证阻止外部编辑器/进程在最后检查与替换之间写入或恶意替换目录。
+- .devops-sync.pending.json 用于处理文档与状态之间的中断。恢复只核对文件并完成状态提交，不覆盖用户文件；检测到额外修改则停止。异常退出后遗留的锁须按 docs/manual-test.md 中步骤处理。
+- 组织、项目与 ID 共同确定来源。切换来源会拒绝同步旧来源条目；切换保存目录不会搬动旧文档，也不会扫描旧目录。
 - 网络请求超时为 20 秒，响应上限为 5 MB；取消在文件提交前生效，完成文件保存后不回滚。
-- 需求可能含内部资料。是否提交 Git 由项目自行决定，插件不会自动提交或推送。
+- 需求与 .devops-sync.json 中的完整基线都可能含内部资料。是否提交 Git 由项目自行决定；建议在变更提交前检查这些文件。插件不会自动提交或推送。
 
 ## 验证与打包
 
@@ -80,16 +106,17 @@ npm run compile
 npm run package
 ~~~
 
-本地安装包生成在 work/devops-connector-0.1.0.vsix。通过 VS Code 扩展面板的“从 VSIX 安装”安装；安装不会发布到 Marketplace。
+本地安装包生成在 work/devops-connector-0.2.0.vsix。通过 VS Code 扩展面板的“从 VSIX 安装”安装；安装不会发布到 Marketplace。F5 开发方式请停止旧调试后重新 F5。
 
 publisher 当前为本地占位值；未选择分发许可证，也未配置远程仓库。打包跳过许可证检查仅用于本地开发，发布前必须补齐这些信息。
 
-单元测试使用模拟 API，不需要真实 PAT。真实账号权限、F5 交互、SecretStorage 持久化以及实际 Work Item 富文本需按 docs/manual-test.md 验收。
+单元测试使用模拟 API，不需要真实 PAT。用户已确认真实项目首次导入成功；新增的旧文件接入、手动同步与差异 UI 仍需按 docs/manual-test.md 联调。可在编译后运行 node scripts/smoke.mjs 加已安装的 Code.exe 路径进行隔离宿主启动检查；它使用 work 下的独立配置，不读取真实项目或 PAT。
 
 后续开发顺序见 docs/roadmap.md。
 
 ## 参考
 
 - [Work Items REST API 7.1](https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/work-items/get-work-item?view=azure-devops-rest-7.1)
+- [Work Item 历史修订 API](https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/revisions/get?view=azure-devops-rest-7.1)
 - [VS Code API / SecretStorage](https://code.visualstudio.com/api/references/vscode-api#SecretStorage)
 - [VS Code Workspace Trust](https://code.visualstudio.com/api/extension-guides/workspace-trust)

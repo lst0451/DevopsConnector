@@ -1,8 +1,8 @@
 {
   "name": "devops-connector",
   "displayName": "DevOps Connector",
-  "description": "Import Azure DevOps work items into the current project as Markdown.",
-  "version": "0.1.0",
+  "description": "Import, track and safely synchronize Azure DevOps work items as local Markdown.",
+  "version": "0.2.0",
   "publisher": "devops-connector-local",
   "private": true,
   "license": "UNLICENSED",
@@ -19,7 +19,14 @@
       { "command": "devopsConnector.configure", "title": "Configure Connection", "category": "DevOps Connector" },
       { "command": "devopsConnector.setToken", "title": "Set Personal Access Token", "category": "DevOps Connector" },
       { "command": "devopsConnector.clearToken", "title": "Remove Personal Access Token", "category": "DevOps Connector" },
-      { "command": "devopsConnector.importWorkItem", "title": "Import Work Item", "category": "DevOps Connector" }
+      { "command": "devopsConnector.importWorkItem", "title": "Import Work Item", "category": "DevOps Connector" },
+      { "command": "devopsConnector.trackExistingWorkItem", "title": "Track Existing Work Item", "category": "DevOps Connector" },
+      { "command": "devopsConnector.showTrackedWorkItems", "title": "Show Tracked Work Items", "category": "DevOps Connector" },
+      { "command": "devopsConnector.syncWorkItem", "title": "Sync Work Item", "category": "DevOps Connector" },
+      { "command": "devopsConnector.syncAllWorkItems", "title": "Sync All Work Items", "category": "DevOps Connector" },
+      { "command": "devopsConnector.previewChanges", "title": "View Remote Changes", "category": "DevOps Connector" },
+      { "command": "devopsConnector.compareBaseline", "title": "Compare with Last Synced Version", "category": "DevOps Connector" },
+      { "command": "devopsConnector.stopTracking", "title": "Stop Tracking Work Item", "category": "DevOps Connector" }
     ],
     "configuration": {
       "title": "DevOps Connector",
@@ -45,7 +52,7 @@
     "watch": "node scripts/build.mjs --watch",
     "test": "tsc && node --test out/test/*.test.js",
     "vscode:prepublish": "npm run check && node scripts/build.mjs --production",
-    "package": "vsce package --allow-missing-repository --skip-license --out work/devops-connector-0.1.0.vsix"
+    "package": "vsce package --allow-missing-repository --skip-license --out work/devops-connector-0.2.0.vsix"
   },
   "dependencies": { "turndown": "7.2.5", "turndown-plugin-gfm": "1.0.2" },
   "devDependencies": {
