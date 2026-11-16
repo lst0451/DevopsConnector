@@ -2,7 +2,8 @@ import { test, TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { renderWorkItem } from '../src/markdown';
+import { DownloadedImage } from '../src/azureDevOpsClient';
+import { referencedLocalImages, renderWorkItem } from '../src/markdown';
 import { describeChanges, digest, LOCK_FILE, PENDING_FILE, readExistingExport, STATE_FILE } from '../src/syncModel';
 import { SyncRepository } from '../src/syncRepository';
 import { ExistingFileMismatch, SyncService } from '../src/syncService';
@@ -410,4 +411,129 @@ test('explicit renderer version allows reattachment and rejects unsupported vers
   assert.equal(readExistingExport(exported, 42, connection).rendererVersion, 3);
   assert.throws(() => readExistingExport(exported.replace('导出模板版本：3', '导出模板版本：999'),
     42, connection), /导出模板版本无法识别/);
+});
+
+const samplePng = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 10, 20, 30]);
+const sampleJpg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 40, 50]);
+
+class FakeImageClient extends FakeClient {
+  imageCalls = 0;
+  readonly responses = new Map<string, DownloadedImage>();
+  async downloadImage(_connection: Connection, imageUrl: string): Promise<DownloadedImage> {
+    this.imageCalls++;
+    const found = this.responses.get(imageUrl);
+    if (!found) { throw new UserError('找不到远端图片'); }
+    return found;
+  }
+}
+
+test('import downloads remote images into images/ and writes relative local links', async (t) => {
+  const s = await setup(t);
+  const imgUrl = 'https://vffice.visualstudio.com/Demo/_apis/wit/attachments/11111111-1111-1111-1111-111111111111?fileName=flow.png';
+  const extUrl = 'https://cdn.example.com/diagram.jpg';
+  const imageClient = new FakeImageClient();
+  imageClient.latest = {
+    id: 42,
+    rev: 5,
+    fields: {
+      'System.TeamProject': 'Demo',
+      'System.Title': '带图片需求',
+      'System.Description': `<p>见下图：</p><p><img src="${imgUrl}" alt="流程图"></p>`,
+      'Custom.Design': `<p><img src="${extUrl}" alt="架构"></p>`,
+    },
+  };
+  imageClient.responses.set(imgUrl, { data: samplePng, contentType: 'image/png' });
+  imageClient.responses.set(extUrl, { data: sampleJpg, contentType: 'image/jpeg' });
+
+  const service = new SyncService(s.repository, connection, imageClient, now);
+  await service.import(42, 'not-real', guard);
+
+  const markdown = await fs.readFile(s.file, 'utf8');
+  const refs = referencedLocalImages(markdown);
+  assert.equal(refs.length, 2);
+  assert.match(refs[0]!, /^images\/flow-[a-f0-9]{8}\.png$/);
+  assert.match(refs[1]!, /^images\/diagram-[a-f0-9]{8}\.jpg$/);
+  assert.ok(markdown.includes(`![流程图](${refs[0]})`));
+  assert.ok(markdown.includes(`![架构](${refs[1]})`));
+  assert.ok(markdown.includes('图片已下载到本地。'));
+  assert.doesNotMatch(markdown, /远端图片/);
+
+  const savedImages = await fs.readdir(path.join(s.directory, 'images'));
+  assert.equal(savedImages.length, 2);
+  assert.deepEqual(new Uint8Array(await fs.readFile(path.join(s.directory, refs[0]!))), samplePng);
+  assert.deepEqual(new Uint8Array(await fs.readFile(path.join(s.directory, refs[1]!))), sampleJpg);
+
+  const recheck = await service.check(42, 'not-real', clean);
+  assert.equal(recheck.changed, false);
+  assert.equal(recheck.imagesChanged, false);
+  assert.equal(imageClient.imageCalls, 2);
+});
+
+test('check and apply localize remote image links and restore missing local image files', async (t) => {
+  const s = await setup(t);
+  const imgUrl = 'https://vffice.visualstudio.com/Demo/_apis/wit/attachments/22222222-2222-2222-2222-222222222222?fileName=spec.png';
+  const itemWithImage: WorkItem = {
+    id: 42,
+    rev: 10,
+    fields: {
+      'System.TeamProject': 'Demo',
+      'System.Title': '旧导出图片升级',
+      'System.Description': `<p><img src="${imgUrl}" alt="规格图"></p>`,
+    },
+  };
+  await fs.mkdir(s.directory, { recursive: true });
+  await fs.writeFile(s.file, renderWorkItem(itemWithImage, connection, now(), 3));
+
+  const imageClient = new FakeImageClient();
+  imageClient.latest = itemWithImage;
+  imageClient.getWorkItemRevision = async () => itemWithImage;
+  imageClient.responses.set(imgUrl, { data: samplePng, contentType: 'image/png' });
+
+  const service = new SyncService(s.repository, connection, imageClient, now);
+  await service.trackExisting(42, 'not-real', guard);
+
+  const upgradePlan = await service.check(42, 'not-real', clean);
+  assert.equal(upgradePlan.changed, true);
+  assert.equal(upgradePlan.revisionChanged, false);
+  assert.equal(upgradePlan.templateChanged, false);
+  assert.equal(upgradePlan.imagesChanged, true);
+  assert.equal(describeChanges(upgradePlan), '下载远端图片到本地');
+  await service.apply(upgradePlan, guard);
+
+  const localized = await fs.readFile(s.file, 'utf8');
+  const refs = referencedLocalImages(localized);
+  assert.equal(refs.length, 1);
+  assert.doesNotMatch(localized, /远端图片/);
+
+  await fs.unlink(path.join(s.directory, refs[0]!));
+  const restorePlan = await service.check(42, 'not-real', clean);
+  assert.equal(restorePlan.changed, true);
+  assert.equal(restorePlan.imagesChanged, true);
+  await service.apply(restorePlan, guard);
+  assert.deepEqual(new Uint8Array(await fs.readFile(path.join(s.directory, refs[0]!))), samplePng);
+});
+
+test('symlinked images directory is rejected without writing through it', async (t) => {
+  const s = await setup(t);
+  const imgUrl = 'https://cdn.example.com/test.png';
+  const imageClient = new FakeImageClient();
+  imageClient.latest = {
+    id: 42,
+    rev: 1,
+    fields: {
+      'System.TeamProject': 'Demo',
+      'System.Title': '符号链接防护',
+      'System.Description': `<p><img src="${imgUrl}" alt="图"></p>`,
+    },
+  };
+  imageClient.responses.set(imgUrl, { data: samplePng, contentType: 'image/png' });
+  const service = new SyncService(s.repository, connection, imageClient, now);
+
+  const outside = path.join(s.root, 'outside-images');
+  await fs.mkdir(outside, { recursive: true });
+  await fs.mkdir(s.directory, { recursive: true });
+  await fs.symlink(outside, path.join(s.directory, 'images'), process.platform === 'win32' ? 'junction' : 'dir');
+
+  await assert.rejects(service.import(42, 'not-real', guard), /符号链接/);
+  assert.deepEqual(await fs.readdir(outside), []);
 });

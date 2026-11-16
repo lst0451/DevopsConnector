@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AzureDevOpsClient, validateWorkItem } from '../src/azureDevOpsClient';
+import { AzureDevOpsClient, buildLocalImagePath, validateWorkItem } from '../src/azureDevOpsClient';
 
 const connection = { organizationUrl: 'https://dev.azure.com/example', project: 'My Project' };
 const fixture = { id: 42, rev: 3, fields: { 'System.TeamProject': 'My Project', 'System.Title': 'Test' } };
@@ -80,4 +80,80 @@ test('propagates caller cancellation safely', async () => {
     throw new Error('cancelled');
   });
   await assert.rejects(client.getWorkItem(connection, 42, 'not-real', controller.signal), /已取消/);
+});
+
+const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+
+test('downloadImage sends PAT only for same organization and disables redirects', async () => {
+  let seenAuth: string | undefined;
+  const orgClient = new AzureDevOpsClient(async (_url, options) => {
+    assert.equal(options?.redirect, 'error');
+    seenAuth = (options?.headers as Record<string, string>).Authorization;
+    return new Response(pngBytes, { headers: { 'content-type': 'image/png' } });
+  });
+  const orgResult = await orgClient.downloadImage(connection,
+    'https://example.visualstudio.com/My%20Project/_apis/wit/attachments/11111111-1111-1111-1111-111111111111?fileName=screen.png',
+    'pat-secret');
+  assert.equal(seenAuth, 'Basic ' + Buffer.from(':pat-secret').toString('base64'));
+  assert.deepEqual(orgResult.data, pngBytes);
+  assert.equal(orgResult.contentType, 'image/png');
+
+  let externalAuth: string | undefined;
+  const externalClient = new AzureDevOpsClient(async (_url, options) => {
+    assert.equal(options?.redirect, 'error');
+    externalAuth = (options?.headers as Record<string, string>).Authorization;
+    return new Response(pngBytes, { headers: { 'content-type': 'image/png' } });
+  });
+  const externalResult = await externalClient.downloadImage(connection, 'https://cdn.example.com/assets/diagram.png', '');
+  assert.equal(externalAuth, undefined);
+  assert.deepEqual(externalResult.data, pngBytes);
+});
+
+test('downloadImage rejects HTML responses, HTTP errors, oversized files and unsafe URLs', async () => {
+  const html = new AzureDevOpsClient(async () => new Response('<html>login</html>', {
+    headers: { 'content-type': 'text/html; charset=utf-8' },
+  }));
+  await assert.rejects(html.downloadImage(connection, 'https://cdn.example.com/a.png', ''), /未返回二进制内容/);
+
+  const notFound = new AzureDevOpsClient(async () => new Response('nope', { status: 404 }));
+  await assert.rejects(notFound.downloadImage(connection, 'https://cdn.example.com/a.png', ''), /找不到远端图片/);
+
+  const empty = new AzureDevOpsClient(async () => new Response(new Uint8Array(0), {
+    headers: { 'content-type': 'image/png' },
+  }));
+  await assert.rejects(empty.downloadImage(connection, 'https://cdn.example.com/a.png', ''), /内容为空/);
+
+  const oversized = new AzureDevOpsClient(async () => new Response(new Uint8Array(20 * 1024 * 1024 + 1), {
+    headers: { 'content-type': 'image/png' },
+  }));
+  await assert.rejects(oversized.downloadImage(connection, 'https://cdn.example.com/a.png', ''), /超过 20 MB/);
+
+  await assert.rejects(html.downloadImage(connection, 'http://cdn.example.com/a.png', ''), /HTTPS/);
+  await assert.rejects(html.downloadImage(connection, 'https://user:pass@cdn.example.com/a.png', ''), /HTTPS/);
+});
+
+test('buildLocalImagePath detects magic bytes, falls back to contentType/URL, and sanitizes filenames', () => {
+  const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+  const gifBytes = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
+  const webpBytes = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]);
+  const bmpBytes = new Uint8Array([0x42, 0x4d, 0, 0]);
+
+  const p1 = buildLocalImagePath(
+    'https://dev.azure.com/example/Proj/_apis/wit/attachments/11111111-2222-3333-4444-555555555555?fileName=Screenshot%20(1).png',
+    'application/octet-stream', jpegBytes);
+  assert.match(p1, /^images\/screenshot-1-[a-f0-9]{8}\.jpg$/);
+
+  const p2 = buildLocalImagePath(
+    'https://dev.azure.com/example/Proj/_apis/wit/attachments/11111111-2222-3333-4444-555555555555',
+    'image/gif', gifBytes);
+  assert.match(p2, /^images\/image-[a-f0-9]{8}\.gif$/);
+
+  const p3 = buildLocalImagePath('https://cdn.example.com/con.png', 'application/octet-stream', webpBytes);
+  assert.match(p3, /^images\/image-[a-f0-9]{8}\.webp$/);
+
+  const p4 = buildLocalImagePath('https://cdn.example.com/%E6%88%AA%E5%9B%BE.bmp', 'image/bmp', bmpBytes);
+  assert.match(p4, /^images\/image-[a-f0-9]{8}\.bmp$/);
+
+  const p5 = buildLocalImagePath('https://cdn.example.com/favicon.ico', 'image/x-icon', new Uint8Array([1, 2, 3]));
+  assert.match(p5, /^images\/favicon-[a-f0-9]{8}\.ico$/);
 });

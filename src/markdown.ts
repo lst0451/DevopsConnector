@@ -25,7 +25,7 @@ function safeLink(raw: string, base: string): string | undefined {
   } catch { return undefined; }
 }
 
-export function htmlToMarkdown(html: string, base: string): string {
+export function htmlToMarkdown(html: string, base: string, imagePaths?: ReadonlyMap<string, string>, collectedUrls?: string[]): string {
   const converter = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-' });
   converter.use(gfm);
   const escape = converter.escape.bind(converter);
@@ -63,22 +63,69 @@ export function htmlToMarkdown(html: string, base: string): string {
   converter.addRule('imageLinksOnly', {
     filter: 'img',
     replacement: (_content, node) => {
+      let ancestor = node.parentNode;
+      while (ancestor) {
+        if (['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'FORM', 'SVG'].includes(ancestor.nodeName.toUpperCase())) {
+          return '';
+        }
+        ancestor = ancestor.parentNode;
+      }
       const href = safeLink(node.getAttribute('src') ?? '', base);
       const label = inline(node.getAttribute('alt')) || '图片';
+      if (href && collectedUrls && !collectedUrls.includes(href)) {
+        collectedUrls.push(href);
+      }
+      const localPath = href ? imagePaths?.get(href) : undefined;
+      if (localPath) {
+        return '![' + label + '](' + localPath + ')';
+      }
       return href ? '[' + label + '（远端图片）](' + href + ')' : '[图片未导入]';
     },
   });
   return converter.turndown(html).trim();
 }
 
-export function renderWorkItem(item: WorkItem, connection: Connection, importedAt: Date, rendererVersion: RendererVersion = CURRENT_RENDERER_VERSION): string {
+export function extractImageUrlsFromHtml(html: string, base: string): string[] {
+  const urls: string[] = [];
+  htmlToMarkdown(html, base, undefined, urls);
+  return urls;
+}
+
+export function extractImageUrls(item: WorkItem, connection: Connection, rendererVersion: RendererVersion = CURRENT_RENDERER_VERSION): string[] {
+  const fields = item.fields;
+  const source = workItemUrl(connection, item.id);
+  const urls: string[] = [];
+  const fieldNames = [
+    'System.Description',
+    ...(rendererVersion >= 3 ? ['Custom.Specifications'] : []),
+    'Microsoft.VSTS.Common.AcceptanceCriteria',
+    ...(rendererVersion >= 3 ? ['Custom.Design'] : []),
+    'Microsoft.VSTS.TCM.ReproSteps',
+  ];
+  for (const field of fieldNames) {
+    htmlToMarkdown(text(fields[field]), source, undefined, urls);
+  }
+  return urls;
+}
+
+export function referencedLocalImages(markdown: string): string[] {
+  const matches = new Set<string>();
+  const pattern = /!\[(?:\\.|[^\]\\])*\]\((images\/[a-zA-Z0-9._-]+)\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(markdown)) !== null) {
+    matches.add(match[1]!);
+  }
+  return [...matches];
+}
+
+export function renderWorkItem(item: WorkItem, connection: Connection, importedAt: Date, rendererVersion: RendererVersion = CURRENT_RENDERER_VERSION, imagePaths?: ReadonlyMap<string, string>): string {
   const fields = item.fields;
   const assigned = fields['System.AssignedTo'];
   const assignedTo = typeof assigned === 'object' && assigned !== null && 'displayName' in assigned ?
     assigned.displayName : assigned;
   const source = workItemUrl(connection, item.id);
   const section = (name: string, field: string): string =>
-    '## ' + name + '\n\n' + (htmlToMarkdown(text(fields[field]), source) || '（未提供）');
+    '## ' + name + '\n\n' + (htmlToMarkdown(text(fields[field]), source, imagePaths) || '（未提供）');
   return [
     '# ' + item.id + ' — ' + inline(fields['System.Title']),
     rendererVersion === 1 ?
@@ -101,6 +148,8 @@ export function renderWorkItem(item: WorkItem, connection: Connection, importedA
     section('验收标准', 'Microsoft.VSTS.Common.AcceptanceCriteria'),
     ...(rendererVersion >= 3 ? [section('设计说明（Design）', 'Custom.Design')] : []),
     section('复现步骤', 'Microsoft.VSTS.TCM.ReproSteps'),
-    '> 评论、附件和历史未导入；图片仅保留链接。',
+    imagePaths && imagePaths.size > 0 ?
+      '> 评论、附件和历史未导入；图片已下载到本地。' :
+      '> 评论、附件和历史未导入；图片仅保留链接。',
   ].join('\n\n') + '\n';
 }

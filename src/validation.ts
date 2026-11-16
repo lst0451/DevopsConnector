@@ -124,3 +124,20 @@ export function resolveToken(storedToken: string | undefined, env: NodeJS.Proces
   }
   return value;
 }
+
+export function isSameOrganizationUrl(rawUrl: string, organizationUrl: string): boolean {
+  let url: URL;
+  try { url = new URL(rawUrl.trim()); }
+  catch { return false; }
+  if (url.protocol !== 'https:' || url.username || url.password || url.port) {
+    return false;
+  }
+  try {
+    const candidateOrg = url.hostname === 'dev.azure.com' ?
+      url.origin + '/' + (url.pathname.split('/').filter(Boolean)[0] ?? '') :
+      url.origin;
+    return organizationIdentity(candidateOrg) === organizationIdentity(organizationUrl);
+  } catch {
+    return false;
+  }
+}

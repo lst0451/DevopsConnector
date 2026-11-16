@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { htmlToMarkdown, renderWorkItem } from '../src/markdown';
+import { extractImageUrls, extractImageUrlsFromHtml, htmlToMarkdown, referencedLocalImages, renderWorkItem } from '../src/markdown';
 
 const connection = { organizationUrl: 'https://dev.azure.com/example', project: 'My Project' };
 const base = connection.organizationUrl + '/My%20Project/_workitems/edit/42';
@@ -87,4 +87,51 @@ test('missing custom fields remain explicit and custom HTML receives safety conv
   assert.doesNotMatch(result, /unsafe\(\)|command:|<table|!\[/);
   assert.match(result, /表格内容/);
   assert.match(result, /设计图（远端图片）/);
+});
+
+test('extractImageUrls collects unique safe HTTPS images across rendered fields', () => {
+  const item = {
+    id: 42,
+    rev: 5,
+    fields: {
+      'System.Description': '<p><img src="https://dev.azure.com/example/_apis/wit/attachments/1?fileName=a.png" alt="图A"></p>',
+      'Custom.Specifications': '<p><img src="https://dev.azure.com/example/_apis/wit/attachments/1?fileName=a.png"><img src="http://insecure.test/bad.png"></p>',
+      'Microsoft.VSTS.Common.AcceptanceCriteria': '<script><img src="https://evil.test/in-script.png"></script><form><img src="https://evil.test/in-form.png"></form>',
+      'Custom.Design': '<p><img src="https://cdn.example.com/design.jpg" alt="设计[1]"></p>',
+      'Microsoft.VSTS.TCM.ReproSteps': '<p><img src="data:image/png;base64,AAAA"></p>',
+    },
+  };
+  assert.deepEqual(extractImageUrls(item, connection), [
+    'https://dev.azure.com/example/_apis/wit/attachments/1?fileName=a.png',
+    'https://cdn.example.com/design.jpg',
+  ]);
+  assert.deepEqual(extractImageUrlsFromHtml('<img src="/relative.png">', base), [
+    'https://dev.azure.com/relative.png',
+  ]);
+});
+
+test('renderWorkItem uses local image paths when provided and referencedLocalImages extracts them', () => {
+  const img1 = 'https://dev.azure.com/example/_apis/wit/attachments/1?fileName=a.png';
+  const img2 = 'https://cdn.example.com/design.jpg';
+  const item = {
+    id: 42,
+    rev: 5,
+    fields: {
+      'System.Description': `<p><img src="${img1}" alt="图A"></p>`,
+      'Custom.Design': `<p><img src="${img2}" alt="设计[1]"></p>`,
+    },
+  };
+  const map = new Map([
+    [img1, 'images/a-11111111.png'],
+    [img2, 'images/design-22222222.jpg'],
+  ]);
+  const md = renderWorkItem(item, connection, new Date('2026-11-11T12:00:00Z'), 3, map);
+  assert.ok(md.includes('![图A](images/a-11111111.png)'));
+  assert.ok(md.includes('![设计\\[1\\]](images/design-22222222.jpg)'));
+  assert.ok(md.includes('图片已下载到本地。'));
+  assert.doesNotMatch(md, /远端图片/);
+  assert.deepEqual(referencedLocalImages(md), [
+    'images/a-11111111.png',
+    'images/design-22222222.jpg',
+  ]);
 });

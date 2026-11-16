@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { UserError } from '../src/types';
-import { envToken, normalizeOrganization, organizationIdentity, parseOrganizationInput, parseWorkItemInput, resolveToken, validateDirectory, validateId, validateProject } from '../src/validation';
+import { envToken, isSameOrganizationUrl, normalizeOrganization, organizationIdentity, parseOrganizationInput, parseWorkItemInput, resolveToken, validateDirectory, validateId, validateProject } from '../src/validation';
 
 const connection = { organizationUrl: 'https://dev.azure.com/example', project: 'My Project' };
 
@@ -118,5 +118,29 @@ test('resolveToken throws UserError when neither stored token nor AZURE_DEVOPS_P
       assert.throws(() => resolveToken(stored, env),
         (error: unknown) => error instanceof UserError && /AZURE_DEVOPS_PAT/.test(error.message));
     }
+  }
+});
+
+test('isSameOrganizationUrl matches across visualstudio.com and dev.azure.com aliases only', () => {
+  const legacyOrg = 'https://vffice.visualstudio.com';
+  const modernOrg = 'https://dev.azure.com/vffice';
+  for (const imageUrl of [
+    'https://vffice.visualstudio.com/Proj/_apis/wit/attachments/1234',
+    'https://dev.azure.com/vffice/Proj/_apis/wit/attachments/1234',
+  ]) {
+    assert.equal(isSameOrganizationUrl(imageUrl, legacyOrg), true);
+    assert.equal(isSameOrganizationUrl(imageUrl, modernOrg), true);
+  }
+  for (const otherUrl of [
+    'https://other.visualstudio.com/Proj/_apis/wit/attachments/1234',
+    'https://dev.azure.com/other/Proj/_apis/wit/attachments/1234',
+    'https://cdn.example.com/image.png',
+    'http://vffice.visualstudio.com/_apis/wit/attachments/1234',
+    'https://user:pass@vffice.visualstudio.com/_apis/wit/attachments/1234',
+    'https://vffice.visualstudio.com:8443/_apis/wit/attachments/1234',
+    'not-a-url',
+  ]) {
+    assert.equal(isSameOrganizationUrl(otherUrl, legacyOrg), false);
+    assert.equal(isSameOrganizationUrl(otherUrl, modernOrg), false);
   }
 });

@@ -1,10 +1,11 @@
-import { AzureDevOpsClient } from './azureDevOpsClient';
-import { CURRENT_RENDERER_VERSION, renderWorkItem } from './markdown';
+import { AzureDevOpsClient, buildLocalImagePath } from './azureDevOpsClient';
+import { CURRENT_RENDERER_VERSION, extractImageUrls, referencedLocalImages, renderWorkItem } from './markdown';
 import { SyncRepository } from './syncRepository';
 import { assertSource, digest, readExistingExport, SyncPlan, SyncState, SyncStatus } from './syncModel';
 import { Connection, UserError, WorkItem } from './types';
 
-type Client = Pick<AzureDevOpsClient, 'getWorkItem' | 'getWorkItemRevision'>;
+type Client = Pick<AzureDevOpsClient, 'getWorkItem' | 'getWorkItemRevision'> &
+  Partial<Pick<AzureDevOpsClient, 'downloadImage'>>;
 export interface TrackedItem { id: number; title: string; status: SyncStatus; revision?: number; rendererVersion?: number; checkedAt?: string; detail: string }
 export class ExistingFileMismatch extends UserError {
   constructor(readonly local: string, readonly expected: string) {
@@ -18,8 +19,8 @@ function title(item: WorkItem): string {
 function cancelled(signal?: AbortSignal): void {
   if (signal?.aborted) { throw new UserError('已取消操作。'); }
 }
-function makeState(item: WorkItem, connection: Connection, now: string): SyncState {
-  const baseline = renderWorkItem(item, connection, new Date(now));
+function makeState(item: WorkItem, connection: Connection, now: string, imagePaths?: ReadonlyMap<string, string>): SyncState {
+  const baseline = renderWorkItem(item, connection, new Date(now), CURRENT_RENDERER_VERSION, imagePaths);
   return {
     schema: 1, id: item.id, connection, title: title(item), revision: item.rev, rendererVersion: CURRENT_RENDERER_VERSION,
     baseline, hash: digest(baseline), exportedAt: now, checkedAt: now, attemptedAt: now, status: 'synced',
@@ -29,6 +30,24 @@ export class SyncService {
   constructor(readonly repository: SyncRepository, readonly connection: Connection,
     private readonly client: Client, private readonly now: () => Date = () => new Date()) {}
 
+  private async resolveImages(item: WorkItem, token: string, signal?: AbortSignal):
+    Promise<{ paths: Map<string, string>; files: Map<string, Uint8Array> }> {
+    const paths = new Map<string, string>();
+    const files = new Map<string, Uint8Array>();
+    const urls = extractImageUrls(item, this.connection, CURRENT_RENDERER_VERSION);
+    if (urls.length === 0 || !this.client.downloadImage) {
+      return { paths, files };
+    }
+    for (const url of urls) {
+      cancelled(signal);
+      const downloaded = await this.client.downloadImage(this.connection, url, token, signal);
+      const localPath = buildLocalImagePath(url, downloaded.contentType, downloaded.data);
+      paths.set(url, localPath);
+      files.set(localPath, downloaded.data);
+    }
+    return { paths, files };
+  }
+
   async import(id: number, token: string, guard: () => void, signal?: AbortSignal): Promise<void> {
     await this.repository.withItem(id, true, async (local) => {
       if (await local.state() || await local.readDocument() !== undefined) {
@@ -37,7 +56,9 @@ export class SyncService {
       guard(); cancelled(signal);
       const item = await this.client.getWorkItem(this.connection, id, token, signal);
       cancelled(signal);
-      await local.commit(makeState(item, this.connection, this.now().toISOString()), null, guard);
+      const images = await this.resolveImages(item, token, signal);
+      cancelled(signal);
+      await local.commit(makeState(item, this.connection, this.now().toISOString(), images.paths), null, guard, images.files);
     });
   }
 
@@ -80,11 +101,25 @@ export class SyncService {
       assertSource(state, this.connection);
       const attemptedAt = this.now().toISOString();
       let item: WorkItem;
+      let revisionChanged = false;
+      const templateChanged = state.rendererVersion < CURRENT_RENDERER_VERSION;
+      let imagesChanged = false;
+      let resolvedImages: { paths: Map<string, string>; files: Map<string, Uint8Array> } | undefined;
       try {
         cancelled(signal);
         item = await this.client.getWorkItem(this.connection, id, token, signal);
         cancelled(signal);
         if (item.rev < state.revision) { throw new UserError('远端修订低于本地基线，已停止更新。'); }
+        revisionChanged = item.rev !== state.revision;
+        const imageUrls = extractImageUrls(item, this.connection, CURRENT_RENDERER_VERSION);
+        const existingRefs = referencedLocalImages(state.baseline);
+        const missingLocalImages = imageUrls.length > 0 && Boolean(this.client.downloadImage) &&
+          (state.baseline.includes('（远端图片）') || existingRefs.length < imageUrls.length || !(await local.hasFiles(existingRefs)));
+        imagesChanged = missingLocalImages;
+        if (imageUrls.length > 0 && this.client.downloadImage && (revisionChanged || templateChanged || missingLocalImages)) {
+          resolvedImages = await this.resolveImages(item, token, signal);
+          cancelled(signal);
+        }
       } catch (error) {
         if (!signal?.aborted) {
           await local.writeState({ ...state, attemptedAt, status: 'error',
@@ -95,15 +130,16 @@ export class SyncService {
       const checkedAt = this.now().toISOString();
       const document = await local.readDocument();
       const conflict = document === undefined || digest(document) !== state.hash || isDirty();
-      const revisionChanged = item.rev !== state.revision;
-      const templateChanged = state.rendererVersion < CURRENT_RENDERER_VERSION;
-      const changed = revisionChanged || templateChanged;
-      const next = changed ? makeState(item, this.connection, checkedAt) : state;
+      const changed = revisionChanged || templateChanged || imagesChanged;
+      const next = changed ? makeState(item, this.connection, checkedAt, resolvedImages?.paths) : state;
       await local.writeState({
         ...state, attemptedAt, checkedAt, error: undefined,
         status: conflict ? 'conflict' : changed ? 'updateAvailable' : 'unchanged',
       });
-      return { id, expectedHash: state.hash, previous: state, next, local: document, changed, revisionChanged, templateChanged, conflict };
+      return {
+        id, expectedHash: state.hash, previous: state, next, local: document,
+        changed, revisionChanged, templateChanged, imagesChanged, images: resolvedImages?.files, conflict,
+      };
     });
   }
 
@@ -124,7 +160,7 @@ export class SyncService {
         throw new UserError('预览后本地文件发生变化，已停止覆盖。');
       }
       if (!plan.changed) { return; }
-      await local.commit(plan.next, plan.expectedHash, guard);
+      await local.commit(plan.next, plan.expectedHash, guard, plan.images);
     });
   }
 

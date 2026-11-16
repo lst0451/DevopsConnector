@@ -22,6 +22,16 @@ function json(text: string): unknown {
   try { return JSON.parse(text); }
   catch { throw new UserError('同步状态或恢复记录不是有效 JSON，已停止操作。'); }
 }
+function validateImageRelativePath(relativePath: string): [string, string] {
+  const parts = relativePath.split('/');
+  const fileName = parts[1];
+  if (parts.length !== 2 || parts[0] !== 'images' || !fileName ||
+    !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,120}\.(png|jpg|jpeg|gif|webp|bmp|ico)$/.test(fileName) ||
+    /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(fileName)) {
+    throw new UserError('本地图片路径无效，已停止操作。');
+  }
+  return ['images', fileName];
+}
 async function safeDirectory(root: string, parts: string[], create: boolean): Promise<string | undefined> {
   let directory = await fs.realpath(root);
   for (const part of parts) {
@@ -85,7 +95,58 @@ export class LockedItem {
     // No document is ever changed during recovery.
     await fs.unlink(file);
   }
-  async commit(next: SyncState, expectedHash: string | null, guard: () => void): Promise<void> {
+  async hasFiles(relativePaths: Iterable<string>): Promise<boolean> {
+    const paths = [...relativePaths];
+    if (paths.length === 0) { return true; }
+    const imagesDir = path.join(this.directory, 'images');
+    let dirStat;
+    try { dirStat = await fs.lstat(imagesDir); }
+    catch (error) { if (code(error, 'ENOENT')) { return false; } throw error; }
+    if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
+      throw new UserError('图片目录包含符号链接、目录联接或非目录项，已停止操作。');
+    }
+    for (const relativePath of paths) {
+      const [, fileName] = validateImageRelativePath(relativePath);
+      const target = path.join(imagesDir, fileName);
+      let stat;
+      try { stat = await fs.lstat(target); }
+      catch (error) { if (code(error, 'ENOENT')) { return false; } throw error; }
+      if (stat.isSymbolicLink() || !stat.isFile()) {
+        throw new UserError('图片文件不是普通文件或包含符号链接，已停止操作。');
+      }
+    }
+    return true;
+  }
+  private async writeImages(images?: ReadonlyMap<string, Uint8Array>): Promise<void> {
+    if (!images || images.size === 0) { return; }
+    const imagesDir = path.join(this.directory, 'images');
+    try { await fs.mkdir(imagesDir); }
+    catch (error) { if (!code(error, 'EEXIST')) { throw error; } }
+    const dirStat = await fs.lstat(imagesDir);
+    if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
+      throw new UserError('图片目录包含符号链接、目录联接或非目录项，已停止操作。');
+    }
+    for (const [relativePath, data] of images) {
+      const [, fileName] = validateImageRelativePath(relativePath);
+      const target = path.join(imagesDir, fileName);
+      try {
+        const existingStat = await fs.lstat(target);
+        if (existingStat.isSymbolicLink() || !existingStat.isFile()) {
+          throw new UserError('图片文件不是普通文件或包含符号链接，已停止操作。');
+        }
+      } catch (error) {
+        if (!code(error, 'ENOENT')) { throw error; }
+      }
+      const temporary = path.join(imagesDir, '.devops-img-' + randomUUID() + '.tmp');
+      const handle = await fs.open(temporary, 'wx', 0o600);
+      try {
+        try { await handle.writeFile(data); await handle.sync(); }
+        finally { await handle.close(); }
+        await fs.rename(temporary, target);
+      } finally { await fs.unlink(temporary).catch(() => undefined); }
+    }
+  }
+  async commit(next: SyncState, expectedHash: string | null, guard: () => void, images?: ReadonlyMap<string, Uint8Array>): Promise<void> {
     const document = await this.readDocument();
     if ((document === undefined ? null : digest(document)) !== expectedHash) {
       throw new UserError('本地文件已变化，已停止覆盖。请重新检查差异。');
@@ -109,6 +170,7 @@ export class LockedItem {
             throw new UserError('文件准备期间出现本地修改，未覆盖。');
           }
           guard();
+          await this.writeImages(images);
         } catch (error) { rejectedBeforePublish = true; throw error; }
       });
     } catch (error) {

@@ -32,6 +32,8 @@ export interface SyncPlan {
   changed: boolean;
   revisionChanged: boolean;
   templateChanged: boolean;
+  imagesChanged?: boolean;
+  images?: ReadonlyMap<string, Uint8Array>;
   conflict: boolean;
 }
 export function describeChanges(plan: SyncPlan): string {
@@ -39,6 +41,9 @@ export function describeChanges(plan: SyncPlan): string {
   if (plan.revisionChanged) { changes.push('远端修订 ' + plan.previous.revision + ' → ' + plan.next.revision); }
   if (plan.templateChanged) {
     changes.push('导出模板 ' + plan.previous.rendererVersion + ' → ' + plan.next.rendererVersion + '（补全文档内容）');
+  }
+  if (plan.imagesChanged && !plan.revisionChanged && !plan.templateChanged) {
+    changes.push('下载远端图片到本地');
   }
   return changes.join('；');
 }
