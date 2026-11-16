@@ -3,6 +3,7 @@ import { AzureDevOpsClient } from './azureDevOpsClient';
 import { chooseFolder, configureConnection, readSettings, tokenKey } from './configuration';
 import { registerSyncCommands } from './syncCommands';
 import { UserError } from './types';
+import { envToken } from './validation';
 
 export function activate(context: vscode.ExtensionContext): void {
   const client = new AzureDevOpsClient();
@@ -19,7 +20,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   register('devopsConnector.configure', async () => {
     const folder = await chooseFolder();
-    if (folder) { await configureConnection(folder); }
+    if (folder) { await configureConnection(folder, context.secrets); }
   });
   register('devopsConnector.setToken', async () => {
     const folder = await chooseFolder();
@@ -41,7 +42,9 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!folder) { return; }
     const settings = readSettings(folder);
     await context.secrets.delete(tokenKey(folder, settings));
-    await vscode.window.showInformationMessage('当前文件夹与组织对应的 PAT 已移除。');
+    await vscode.window.showInformationMessage(envToken() ?
+      '当前文件夹与组织对应的 SecretStorage PAT 已移除；将继续默认使用环境变量 AZURE_DEVOPS_PAT。' :
+      '当前文件夹与组织对应的 PAT 已移除。');
   });
   registerSyncCommands(context, client, register);
 }

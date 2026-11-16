@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeOrganization, organizationIdentity, parseOrganizationInput, parseWorkItemInput, validateDirectory, validateId, validateProject } from '../src/validation';
+import { UserError } from '../src/types';
+import { envToken, normalizeOrganization, organizationIdentity, parseOrganizationInput, parseWorkItemInput, resolveToken, validateDirectory, validateId, validateProject } from '../src/validation';
 
 const connection = { organizationUrl: 'https://dev.azure.com/example', project: 'My Project' };
 
@@ -93,5 +94,29 @@ test('validates portable relative output directories', () => {
     '\\\\server\\share', 'docs//items', '.git/items', 'node_modules/items',
     'docs/nul.txt', 'docs/a.', 'docs/a:stream', 'docs/CON', 'docs/../items']) {
     assert.throws(() => validateDirectory(value), value);
+  }
+});
+
+test('envToken reads and trims AZURE_DEVOPS_PAT and ignores empty values', () => {
+  assert.equal(envToken({}), undefined);
+  assert.equal(envToken({ AZURE_DEVOPS_PAT: '   ' }), undefined);
+  assert.equal(envToken({ AZURE_DEVOPS_PAT: '  env-pat-token  ' }), 'env-pat-token');
+});
+
+test('resolveToken falls back to AZURE_DEVOPS_PAT when stored token is missing or blank', () => {
+  assert.equal(resolveToken(undefined, { AZURE_DEVOPS_PAT: '  env-pat  ' }), 'env-pat');
+  assert.equal(resolveToken('   ', { AZURE_DEVOPS_PAT: 'env-pat' }), 'env-pat');
+});
+
+test('resolveToken prefers non-empty stored token over AZURE_DEVOPS_PAT', () => {
+  assert.equal(resolveToken('  stored-pat  ', { AZURE_DEVOPS_PAT: 'env-pat' }), 'stored-pat');
+});
+
+test('resolveToken throws UserError when neither stored token nor AZURE_DEVOPS_PAT is available', () => {
+  for (const stored of [undefined, '', '   ']) {
+    for (const env of [{}, { AZURE_DEVOPS_PAT: '' }, { AZURE_DEVOPS_PAT: ' \t ' }]) {
+      assert.throws(() => resolveToken(stored, env),
+        (error: unknown) => error instanceof UserError && /AZURE_DEVOPS_PAT/.test(error.message));
+    }
   }
 });

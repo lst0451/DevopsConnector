@@ -32,6 +32,7 @@ npm run compile
    - Azure DevOps 项目名称，支持空格和中文；此版本不接受项目 GUID 代替名称。
    - 项目内相对保存目录，默认 docs/workitems。
 2. **DevOps Connector: Set Personal Access Token**
+   - 如果环境变量 `AZURE_DEVOPS_PAT` 已设置（非空），插件会默认使用该 token，可跳过此步（如需为当前工作区和组织单独覆盖，仍可通过此命令设置）。
    - 在密码输入框中输入 PAT，建议只授予 Work Items (Read)。
    - 不要将 PAT 粘贴进 settings.json、源代码、终端命令或 Git。
 3. **DevOps Connector: Import Work Item**

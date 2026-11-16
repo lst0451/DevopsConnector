@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { AzureDevOpsClient } from './azureDevOpsClient';
-import { chooseFolder, readSettings, tokenKey } from './configuration';
+import { chooseFolder, getToken, readSettings } from './configuration';
 import { importFilePath } from './storage';
 import { SyncRepository } from './syncRepository';
 import { ExistingFileMismatch, SyncService, TrackedItem } from './syncService';
@@ -52,11 +52,7 @@ export function registerSyncCommands(context: vscode.ExtensionContext, client: A
     }, client);
     return { folder, settings, service };
   };
-  const token = async (current: Session) => {
-    const value = await context.secrets.get(tokenKey(current.folder, current.settings));
-    if (!value) { throw new UserError('请先运行 DevOps Connector: Set Personal Access Token。'); }
-    return value;
-  };
+  const token = (current: Session) => getToken(context.secrets, current.folder, current.settings);
   const inputId = async (current: Session, title: string) => {
     const input = await vscode.window.showInputBox({
       title: 'DevOps Connector · ' + title,

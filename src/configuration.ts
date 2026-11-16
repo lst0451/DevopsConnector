@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { Connection, UserError } from './types';
-import { organizationIdentity, parseOrganizationInput, validateDirectory, validateProject } from './validation';
+import { envToken, organizationIdentity, parseOrganizationInput, resolveToken, validateDirectory, validateProject } from './validation';
 
 export async function chooseFolder(): Promise<vscode.WorkspaceFolder | undefined> {
   if (!vscode.workspace.isTrusted) { throw new UserError('请先信任当前工作区。'); }
@@ -32,6 +32,10 @@ export function tokenKey(folder: vscode.WorkspaceFolder, connection: Connection)
   return 'devopsConnector.pat:' + JSON.stringify([folder.uri.toString(), organizationIdentity(connection.organizationUrl)]);
 }
 
+export async function getToken(secrets: vscode.SecretStorage, folder: vscode.WorkspaceFolder, connection: Connection): Promise<string> {
+  return resolveToken(await secrets.get(tokenKey(folder, connection)));
+}
+
 function validationMessage(check: (value: string) => unknown): (value: string) => string | undefined {
   return (value) => {
     try { check(value); return undefined; }
@@ -39,7 +43,7 @@ function validationMessage(check: (value: string) => unknown): (value: string) =
   };
 }
 
-export async function configureConnection(folder: vscode.WorkspaceFolder): Promise<void> {
+export async function configureConnection(folder: vscode.WorkspaceFolder, secrets?: vscode.SecretStorage): Promise<void> {
   const config = vscode.workspace.getConfiguration('devopsConnector', folder.uri);
   const organization = await vscode.window.showInputBox({
     title: 'DevOps Connector · 组织或项目地址',
@@ -66,9 +70,16 @@ export async function configureConnection(folder: vscode.WorkspaceFolder): Promi
     validateInput: validationMessage(validateDirectory),
   });
   if (directory === undefined) { return; }
+  const validatedProject = validateProject(project);
   const target = vscode.ConfigurationTarget.WorkspaceFolder;
   await config.update('organizationUrl', parsed.organizationUrl, target);
-  await config.update('project', validateProject(project), target);
+  await config.update('project', validatedProject, target);
   await config.update('saveDirectory', validateDirectory(directory).join('/'), target);
-  await vscode.window.showInformationMessage('连接配置已保存（尚未联网验证）。请设置 PAT，然后导入 Work Item。');
+  const hasPat = Boolean(envToken() || (await secrets?.get(tokenKey(folder, {
+    organizationUrl: parsed.organizationUrl,
+    project: validatedProject,
+  })))?.trim());
+  await vscode.window.showInformationMessage(hasPat ?
+    '连接配置已保存（尚未联网验证）。现在可以导入 Work Item。' :
+    '连接配置已保存（尚未联网验证）。请设置 PAT，然后导入 Work Item。');
 }

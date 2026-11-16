@@ -109,3 +109,18 @@ export function parseWorkItemInput(value: string, connection: Connection): numbe
 export function workItemUrl(connection: Connection, id: number): string {
   return connection.organizationUrl + '/' + encodeURIComponent(connection.project) + '/_workitems/edit/' + id;
 }
+
+export const ENV_PAT_NAME = 'AZURE_DEVOPS_PAT';
+
+export function envToken(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const value = env[ENV_PAT_NAME]?.trim();
+  return value ? value : undefined;
+}
+
+export function resolveToken(storedToken: string | undefined, env: NodeJS.ProcessEnv = process.env): string {
+  const value = storedToken?.trim() || envToken(env);
+  if (!value) {
+    throw new UserError('请先运行 DevOps Connector: Set Personal Access Token，或设置环境变量 AZURE_DEVOPS_PAT。');
+  }
+  return value;
+}
