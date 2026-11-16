@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AzureDevOpsClient, buildLocalImagePath, validateWorkItem } from '../src/azureDevOpsClient';
+import { AzureDevOpsClient, buildLocalImagePath, collectWorkItemIdentities, resolveCommentMentions, validateWorkItem } from '../src/azureDevOpsClient';
 
 const connection = { organizationUrl: 'https://dev.azure.com/example', project: 'My Project' };
 const fixture = { id: 42, rev: 3, fields: { 'System.TeamProject': 'My Project', 'System.Title': 'Test' } };
@@ -156,4 +156,70 @@ test('buildLocalImagePath detects magic bytes, falls back to contentType/URL, an
 
   const p5 = buildLocalImagePath('https://cdn.example.com/favicon.ico', 'image/x-icon', new Uint8Array([1, 2, 3]));
   assert.match(p5, /^images\/favicon-[a-f0-9]{8}\.ico$/);
+});
+
+test('getWorkItemComments paginates, filters deleted entries, and resolves user mentions', async () => {
+  const urls: string[] = [];
+  const client = new AzureDevOpsClient(async (url) => {
+    urls.push(String(url));
+    if (!String(url).includes('continuationToken=')) {
+      return jsonResponse({
+        totalCount: 3,
+        count: 2,
+        continuationToken: 'page-2',
+        comments: [
+          {
+            id: 101,
+            version: 1,
+            text: 'Hello @<11111111-1111-1111-1111-111111111111> and @<33333333-3333-3333-3333-333333333333>',
+            createdBy: { id: '22222222-2222-2222-2222-222222222222', displayName: 'Alice' },
+            createdDate: '2026-11-10T10:00:00Z',
+            modifiedDate: '2026-11-10T10:00:00Z',
+            format: 'markdown',
+          },
+          {
+            id: 102,
+            isDeleted: true,
+            text: 'deleted',
+            createdBy: { displayName: 'Ghost' },
+            createdDate: '2026-11-10T10:05:00Z',
+          },
+        ],
+      });
+    }
+    return jsonResponse({
+      totalCount: 3,
+      count: 1,
+      comments: [
+        {
+          id: 103,
+          version: 2,
+          text: '<a href="#" data-vss-mention="version:2.0,22222222-2222-2222-2222-222222222222"></a><div><p>Done</p></div>',
+          createdBy: { id: '11111111-1111-1111-1111-111111111111', displayName: 'Bob' },
+          createdDate: '2026-11-10T11:00:00Z',
+          modifiedDate: '2026-11-10T11:30:00Z',
+          format: 'html',
+        },
+      ],
+    });
+  });
+
+  const fieldIdentities = collectWorkItemIdentities({
+    'System.AssignedTo': { id: '11111111-1111-1111-1111-111111111111', displayName: 'Bob' },
+  });
+  const comments = await client.getWorkItemComments(connection, 42, 'not-real', undefined, fieldIdentities);
+  assert.equal(urls.length, 2);
+  assert.equal(urls[0], 'https://dev.azure.com/example/My%20Project/_apis/wit/workItems/42/comments?$top=200&order=asc&api-version=7.1-preview.4');
+  assert.equal(urls[1], 'https://dev.azure.com/example/My%20Project/_apis/wit/workItems/42/comments?$top=200&order=asc&continuationToken=page-2&api-version=7.1-preview.4');
+  assert.equal(comments.length, 2);
+  assert.equal(comments[0]?.text, 'Hello @Bob and `@<33333333-3333-3333-3333-333333333333>`');
+  assert.equal(comments[0]?.createdBy, 'Alice');
+  assert.equal(comments[1]?.text, '@Alice<div><p>Done</p></div>');
+  assert.equal(comments[1]?.modifiedDate, '2026-11-10T11:30:00Z');
+  assert.equal(resolveCommentMentions('<a data-vss-mention="version:2.0,11111111-1111-1111-1111-111111111111">Bob</a>', new Map()), '@Bob');
+});
+
+test('getWorkItemComments rejects malformed comment payloads', async () => {
+  const client = new AzureDevOpsClient(async () => jsonResponse({ comments: 'not-an-array' }));
+  await assert.rejects(client.getWorkItemComments(connection, 42, 'not-real'), /评论数据格式无效/);
 });

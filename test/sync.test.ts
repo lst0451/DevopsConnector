@@ -631,3 +631,103 @@ test('check and apply upgrade legacy Chinese section titles and escaped Design M
   assert.ok(afterStateChange.includes('- State: Closed'));
   assert.equal((await s.service.list())[0]?.workItemState, 'Closed');
 });
+
+test('import and sync fetch all comments including images inside comments', async (t) => {
+  const s = await setup(t);
+  const commentImg = 'https://vffice.visualstudio.com/Demo/_apis/wit/attachments/33333333-3333-3333-3333-333333333333?fileName=comment.png';
+  const commentClient = new class extends FakeImageClient {
+    comments: Array<{ id: number; text: string; createdBy: string; createdDate: string; modifiedDate?: string; format?: string }> = [
+      {
+        id: 1,
+        text: `See @Bob screenshot:\n\n![comment.png](${commentImg})`,
+        createdBy: 'Alice',
+        createdDate: '2026-11-10T15:40:38Z',
+      },
+    ];
+    async getWorkItemComments() {
+      return this.comments;
+    }
+  }();
+  commentClient.latest = {
+    id: 42,
+    rev: 10,
+    fields: {
+      'System.TeamProject': 'Demo',
+      'System.Title': '包含评论的需求',
+      'System.CommentCount': 1,
+      'System.Description': '<p>正文</p>',
+    },
+  };
+  commentClient.responses.set(commentImg, { data: samplePng, contentType: 'image/png' });
+
+  const service = new SyncService(s.repository, connection, commentClient, now);
+  await service.import(42, 'not-real', guard);
+
+  const firstMd = await fs.readFile(s.file, 'utf8');
+  const refs = referencedLocalImages(firstMd);
+  assert.equal(refs.length, 1);
+  assert.ok(firstMd.includes('## Comments'));
+  assert.ok(firstMd.includes('### Comment 1 — Alice (2026-11-10T15:40:38Z)'));
+  assert.ok(firstMd.includes(`![comment.png](${refs[0]})`));
+  assert.ok(firstMd.includes('评论与图片已同步到本地'));
+  assert.deepEqual(new Uint8Array(await fs.readFile(path.join(s.directory, refs[0]!))), samplePng);
+
+  const unchanged = await service.check(42, 'not-real', clean);
+  assert.equal(unchanged.changed, false);
+
+  commentClient.comments = [
+    ...commentClient.comments,
+    {
+      id: 2,
+      text: '<p>Follow-up verified</p>',
+      createdBy: 'Bob',
+      createdDate: '2026-11-12T10:00:00Z',
+    },
+  ];
+  commentClient.latest = {
+    ...commentClient.latest,
+    rev: 11,
+    fields: { ...commentClient.latest.fields, 'System.CommentCount': 2 },
+  };
+  const updatedPlan = await service.check(42, 'not-real', clean);
+  assert.equal(updatedPlan.changed, true);
+  await service.apply(updatedPlan, guard);
+
+  const secondMd = await fs.readFile(s.file, 'utf8');
+  assert.ok(secondMd.includes('### Comment 2 — Bob (2026-11-12T10:00:00Z)'));
+  assert.ok(secondMd.includes('Follow-up verified'));
+});
+
+test('sync upgrades an existing tracked item without Comments section at unchanged revision', async (t) => {
+  const s = await setup(t);
+  const baseItem: WorkItem = {
+    id: 42,
+    rev: 10,
+    fields: {
+      'System.TeamProject': 'Demo',
+      'System.Title': '旧无评论基线升级',
+      'System.CommentCount': 1,
+      'System.Description': '<p>正文</p>',
+    },
+  };
+  s.client.latest = baseItem;
+  await s.service.import(42, 'not-real', guard);
+  const oldBaseline = await fs.readFile(s.file, 'utf8');
+  assert.doesNotMatch(oldBaseline, /## Comments/);
+
+  const commentClient = new class extends FakeClient {
+    async getWorkItemComments() {
+      return [{ id: 1, text: 'Legacy comment sync', createdBy: 'Alice', createdDate: '2026-11-12T10:00:00Z' }];
+    }
+  }();
+  commentClient.latest = baseItem;
+  const serviceWithComments = new SyncService(s.repository, connection, commentClient, now);
+  const upgradePlan = await serviceWithComments.check(42, 'not-real', clean);
+  assert.equal(upgradePlan.changed, true);
+  assert.equal(upgradePlan.revisionChanged, false);
+  await serviceWithComments.apply(upgradePlan, guard);
+
+  const upgraded = await fs.readFile(s.file, 'utf8');
+  assert.ok(upgraded.includes('## Comments'));
+  assert.ok(upgraded.includes('Legacy comment sync'));
+});

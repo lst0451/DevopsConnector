@@ -199,3 +199,49 @@ test('unwraps Markdown wrapped in simple p/div/br tags and sanitizes unsafe link
   const withLocal = htmlToMarkdown(wrapped, base, new Map([['https://cdn.example.com/a.png', 'images/a-11111111.png']]));
   assert.ok(withLocal.includes('![图](images/a-11111111.png)'));
 });
+
+test('renderWorkItem and extractImageUrls handle comments including images and edited timestamps', () => {
+  const commentImg = 'https://dev.azure.com/example/_apis/wit/attachments/99?fileName=shot.png';
+  const itemWithEmptyComments = {
+    id: 42,
+    rev: 5,
+    fields: {},
+    comments: [],
+  };
+  const emptyCommentsMd = renderWorkItem(itemWithEmptyComments, connection, new Date('2026-11-11T12:00:00Z'));
+  assert.ok(emptyCommentsMd.includes('## Comments\n\n（未提供）'));
+  assert.ok(emptyCommentsMd.includes('评论已同步到本地'));
+
+  const itemWithComments = {
+    id: 42,
+    rev: 6,
+    fields: {},
+    comments: [
+      {
+        id: 1,
+        text: `**Updated**\n\n![shot.png](${commentImg})`,
+        createdBy: 'Rim El Kassaby',
+        createdDate: '2026-11-10T15:40:38.243Z',
+        modifiedDate: '2026-11-10T15:40:38.243Z',
+        format: 'markdown',
+      },
+      {
+        id: 2,
+        text: '<p>HTML <strong>comment</strong></p>',
+        createdBy: 'Shitao Li',
+        createdDate: '2026-11-11T13:13:44.807Z',
+        modifiedDate: '2026-11-11T14:00:00.000Z',
+        format: 'html',
+      },
+    ],
+  };
+  assert.deepEqual(extractImageUrls(itemWithComments, connection), [commentImg]);
+
+  const md = renderWorkItem(itemWithComments, connection, new Date('2026-11-11T12:00:00Z'), 3,
+    new Map([[commentImg, 'images/shot-12345678.png']]));
+  assert.ok(md.includes('### Comment 1 — Rim El Kassaby (2026-11-10T15:40:38\\.243Z)'));
+  assert.ok(md.includes('![shot.png](images/shot-12345678.png)'));
+  assert.ok(md.includes('### Comment 2 — Shitao Li (2026-11-11T13:13:44\\.807Z, edited 2026-11-11T14:00:00\\.000Z)'));
+  assert.ok(md.includes('HTML **comment**'));
+  assert.ok(md.includes('评论与图片已同步到本地'));
+});

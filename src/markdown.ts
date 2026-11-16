@@ -178,6 +178,11 @@ export function extractImageUrls(item: WorkItem, connection: Connection, rendere
   for (const field of fieldNames) {
     htmlToMarkdown(text(fields[field]), source, undefined, urls);
   }
+  if (rendererVersion >= 3 && item.comments) {
+    for (const comment of item.comments) {
+      htmlToMarkdown(text(comment.text), source, undefined, urls);
+    }
+  }
   return urls;
 }
 
@@ -199,6 +204,22 @@ export function renderWorkItem(item: WorkItem, connection: Connection, importedA
   const source = workItemUrl(connection, item.id);
   const section = (name: string, field: string): string =>
     '## ' + name + '\n\n' + (htmlToMarkdown(text(fields[field]), source, imagePaths) || '（未提供）');
+  const commentsSection = (): string[] => {
+    if (rendererVersion < 3 || item.comments === undefined) { return []; }
+    if (item.comments.length === 0) {
+      return ['## Comments\n\n（未提供）'];
+    }
+    const rendered = item.comments.map((comment, idx) => {
+      const author = inline(comment.createdBy) || 'Unknown';
+      const created = inline(comment.createdDate);
+      const edited = comment.modifiedDate && comment.modifiedDate !== comment.createdDate ?
+        ', edited ' + inline(comment.modifiedDate) : '';
+      const timePart = created ? ' (' + created + edited + ')' : '';
+      const body = htmlToMarkdown(text(comment.text), source, imagePaths) || '（未提供）';
+      return '### Comment ' + (idx + 1) + ' — ' + author + timePart + '\n\n' + body;
+    });
+    return ['## Comments\n\n' + rendered.join('\n\n')];
+  };
   return [
     '# ' + item.id + ' — ' + inline(fields['System.Title']),
     rendererVersion === 1 ?
@@ -224,8 +245,13 @@ export function renderWorkItem(item: WorkItem, connection: Connection, importedA
     section('Acceptance Criteria', 'Microsoft.VSTS.Common.AcceptanceCriteria'),
     ...(rendererVersion >= 3 ? [section('Design', 'Custom.Design')] : []),
     section('Repro Steps', 'Microsoft.VSTS.TCM.ReproSteps'),
-    imagePaths && imagePaths.size > 0 ?
-      '> 评论、附件和历史未导入；图片已下载到本地。' :
-      '> 评论、附件和历史未导入；图片仅保留链接。',
+    ...commentsSection(),
+    item.comments !== undefined ?
+      (imagePaths && imagePaths.size > 0 ?
+        '> 评论与图片已同步到本地；附件和修订历史未导入。' :
+        '> 评论已同步到本地；附件和修订历史未导入；图片仅保留链接。') :
+      (imagePaths && imagePaths.size > 0 ?
+        '> 评论、附件和历史未导入；图片已下载到本地。' :
+        '> 评论、附件和历史未导入；图片仅保留链接。'),
   ].join('\n\n') + '\n';
 }

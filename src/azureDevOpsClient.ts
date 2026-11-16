@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { Connection, UserError, WorkItem } from './types';
+import { Connection, UserError, WorkItem, WorkItemComment } from './types';
 import { isSameOrganizationUrl, normalizeOrganization, validateId, validateProject } from './validation';
 
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
@@ -83,6 +83,45 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function extractIdentity(value: unknown, identities?: Map<string, string>): string {
+  if (typeof value === 'string') { return value; }
+  if (isRecord(value)) {
+    const name = typeof value.displayName === 'string' ? value.displayName.trim() : '';
+    const id = typeof value.id === 'string' ? value.id.trim().toLowerCase() : '';
+    if (id && name && identities) {
+      identities.set(id, name);
+    }
+    return name;
+  }
+  return '';
+}
+
+export function collectWorkItemIdentities(fields: Record<string, unknown>, identities = new Map<string, string>()): Map<string, string> {
+  for (const value of Object.values(fields)) {
+    extractIdentity(value, identities);
+  }
+  return identities;
+}
+
+export function resolveCommentMentions(text: string, identities: ReadonlyMap<string, string>): string {
+  const withHtmlMentions = text.replace(
+    /<a\b[^>]*data-vss-mention="[^"]*?([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"[^>]*>([\s\S]*?)<\/a>/gi,
+    (_match, guid: string, inner: string) => {
+      const cleaned = inner.replace(/<[^>]*>/g, '').trim();
+      if (cleaned) { return cleaned.startsWith('@') ? cleaned : '@' + cleaned; }
+      const name = identities.get(guid.toLowerCase());
+      return name ? '@' + name : '`@<' + guid + '>`';
+    },
+  );
+  return withHtmlMentions.replace(
+    /@<([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})>/g,
+    (_match, guid: string) => {
+      const name = identities.get(guid.toLowerCase());
+      return name ? '@' + name : '`@<' + guid + '>`';
+    },
+  );
+}
+
 export function validateWorkItem(value: unknown, id: number, project: string): WorkItem {
   if (!isRecord(value) || value.id !== id || !Number.isInteger(value.rev) ||
       (value.rev as number) < 1 || !isRecord(value.fields)) {
@@ -105,6 +144,61 @@ export class AzureDevOpsClient {
   async getWorkItemRevision(connection: Connection, id: number, revision: number, token: string, signal?: AbortSignal): Promise<WorkItem> {
     validateId(String(revision));
     return this.request(connection, id, token, signal, revision);
+  }
+
+  async getWorkItemComments(
+    connection: Connection,
+    id: number,
+    token: string,
+    signal?: AbortSignal,
+    fieldIdentities?: ReadonlyMap<string, string>,
+  ): Promise<WorkItemComment[]> {
+    const organization = normalizeOrganization(connection.organizationUrl);
+    const project = validateProject(connection.project);
+    validateId(String(id));
+    if (!token.trim()) { throw new UserError('请先设置 Personal Access Token。'); }
+    const identities = new Map<string, string>(fieldIdentities);
+    const rawComments: WorkItemComment[] = [];
+    const seenTokens = new Set<string>();
+    let continuationToken: string | undefined;
+    for (let page = 0; page < 20; page++) {
+      const url = organization + '/' + encodeURIComponent(project) +
+        '/_apis/wit/workItems/' + id + '/comments?$top=200&order=asc' +
+        (continuationToken ? '&continuationToken=' + encodeURIComponent(continuationToken) : '') +
+        '&api-version=7.1-preview.4';
+      const data = await this.fetchJson(url, token, signal);
+      if (!isRecord(data) || !Array.isArray(data.comments)) {
+        throw new UserError('Azure DevOps 返回的评论数据格式无效。');
+      }
+      for (const entry of data.comments) {
+        if (!isRecord(entry) || entry.isDeleted === true) { continue; }
+        const commentId = typeof entry.id === 'number' && Number.isInteger(entry.id) ? entry.id :
+          typeof entry.commentId === 'number' && Number.isInteger(entry.commentId) ? entry.commentId :
+          rawComments.length + 1;
+        const createdBy = extractIdentity(entry.createdBy, identities) || 'Unknown';
+        extractIdentity(entry.modifiedBy, identities);
+        const rawText = typeof entry.text === 'string' ? entry.text :
+          typeof entry.renderedText === 'string' ? entry.renderedText : '';
+        rawComments.push({
+          id: commentId,
+          version: typeof entry.version === 'number' ? entry.version : undefined,
+          text: rawText,
+          createdBy,
+          createdDate: typeof entry.createdDate === 'string' ? entry.createdDate : '',
+          modifiedDate: typeof entry.modifiedDate === 'string' ? entry.modifiedDate : undefined,
+          format: typeof entry.format === 'string' ? entry.format : undefined,
+        });
+      }
+      const nextToken = typeof data.continuationToken === 'string' && data.continuationToken.trim() ?
+        data.continuationToken.trim() : undefined;
+      if (!nextToken || seenTokens.has(nextToken)) { break; }
+      seenTokens.add(nextToken);
+      continuationToken = nextToken;
+    }
+    return rawComments.map((comment) => ({
+      ...comment,
+      text: resolveCommentMentions(comment.text, identities),
+    }));
   }
 
   async downloadImage(connection: Connection, imageUrl: string, token: string, signal?: AbortSignal): Promise<DownloadedImage> {
@@ -149,13 +243,7 @@ export class AzureDevOpsClient {
     return { data, contentType };
   }
 
-  private async request(connection: Connection, id: number, token: string, signal?: AbortSignal, revision?: number): Promise<WorkItem> {
-    const organization = normalizeOrganization(connection.organizationUrl);
-    const project = validateProject(connection.project);
-    validateId(String(id));
-    if (!token.trim()) { throw new UserError('请先设置 Personal Access Token。'); }
-    const url = organization + '/' + encodeURIComponent(project) +
-      '/_apis/wit/workitems/' + id + (revision === undefined ? '' : '/revisions/' + revision) + '?api-version=7.1';
+  private async fetchJson(url: string, token: string, signal?: AbortSignal): Promise<unknown> {
     const { data: rawBytes } = await this.fetchBinary(url, {
       Accept: 'application/json',
       Authorization: 'Basic ' + Buffer.from(':' + token.trim()).toString('base64'),
@@ -174,9 +262,18 @@ export class AzureDevOpsClient {
       abortedMessage: '已取消导入。',
       networkMessage: '无法连接 Azure DevOps。请检查网络、HTTPS 证书、代理或登录重定向。',
     }, signal);
-    let data: unknown;
-    try { data = JSON.parse(Buffer.from(rawBytes).toString('utf8')); }
+    try { return JSON.parse(Buffer.from(rawBytes).toString('utf8')); }
     catch { throw new UserError('服务返回的 JSON 无法解析。'); }
+  }
+
+  private async request(connection: Connection, id: number, token: string, signal?: AbortSignal, revision?: number): Promise<WorkItem> {
+    const organization = normalizeOrganization(connection.organizationUrl);
+    const project = validateProject(connection.project);
+    validateId(String(id));
+    if (!token.trim()) { throw new UserError('请先设置 Personal Access Token。'); }
+    const url = organization + '/' + encodeURIComponent(project) +
+      '/_apis/wit/workitems/' + id + (revision === undefined ? '' : '/revisions/' + revision) + '?api-version=7.1';
+    const data = await this.fetchJson(url, token, signal);
     const item = validateWorkItem(data, id, project);
     if (revision !== undefined && item.rev !== revision) { throw new UserError('返回的历史修订号不一致，已停止操作。'); }
     return item;

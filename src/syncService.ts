@@ -1,11 +1,11 @@
-import { AzureDevOpsClient, buildLocalImagePath } from './azureDevOpsClient';
+import { AzureDevOpsClient, buildLocalImagePath, collectWorkItemIdentities } from './azureDevOpsClient';
 import { CURRENT_RENDERER_VERSION, extractImageUrls, referencedLocalImages, renderWorkItem } from './markdown';
 import { SyncRepository } from './syncRepository';
 import { assertSource, digest, readExistingExport, readWorkItemState, SyncPlan, SyncState, SyncStatus } from './syncModel';
 import { Connection, UserError, WorkItem } from './types';
 
 type Client = Pick<AzureDevOpsClient, 'getWorkItem' | 'getWorkItemRevision'> &
-  Partial<Pick<AzureDevOpsClient, 'downloadImage'>>;
+  Partial<Pick<AzureDevOpsClient, 'downloadImage' | 'getWorkItemComments'>>;
 export interface TrackedItem { id: number; title: string; workItemState?: string; status: SyncStatus; revision?: number; rendererVersion?: number; checkedAt?: string; detail: string }
 export class ExistingFileMismatch extends UserError {
   constructor(readonly local: string, readonly expected: string) {
@@ -48,13 +48,26 @@ export class SyncService {
     return { paths, files };
   }
 
+  private async attachComments(item: WorkItem, token: string, signal?: AbortSignal): Promise<WorkItem> {
+    if (!this.client.getWorkItemComments) { return item; }
+    if (item.fields['System.CommentCount'] === 0) {
+      return { ...item, comments: [] };
+    }
+    cancelled(signal);
+    const identities = collectWorkItemIdentities(item.fields);
+    const comments = await this.client.getWorkItemComments(this.connection, item.id, token, signal, identities);
+    return { ...item, comments };
+  }
+
   async import(id: number, token: string, guard: () => void, signal?: AbortSignal): Promise<void> {
     await this.repository.withItem(id, true, async (local) => {
       if (await local.state() || await local.readDocument() !== undefined) {
         throw new UserError('本地文件或跟踪记录已存在。旧文件请用 Track Existing Work Item；已跟踪项请用 Sync Work Item。');
       }
       guard(); cancelled(signal);
-      const item = await this.client.getWorkItem(this.connection, id, token, signal);
+      const rawItem = await this.client.getWorkItem(this.connection, id, token, signal);
+      cancelled(signal);
+      const item = await this.attachComments(rawItem, token, signal);
       cancelled(signal);
       const images = await this.resolveImages(item, token, signal);
       cancelled(signal);
@@ -112,6 +125,8 @@ export class SyncService {
         cancelled(signal);
         if (item.rev < state.revision) { throw new UserError('远端修订低于本地基线，已停止更新。'); }
         revisionChanged = item.rev !== state.revision;
+        item = await this.attachComments(item, token, signal);
+        cancelled(signal);
         const imageUrls = extractImageUrls(item, this.connection, CURRENT_RENDERER_VERSION);
         const existingRefs = referencedLocalImages(state.baseline);
         const missingLocalImages = imageUrls.length > 0 && Boolean(this.client.downloadImage) &&
