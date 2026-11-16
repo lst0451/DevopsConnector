@@ -25,7 +25,80 @@ function safeLink(raw: string, base: string): string | undefined {
   } catch { return undefined; }
 }
 
+const HTML_TAG_PATTERN = /<\/?(?:p|div|span|br|hr|strong|b|em|i|u|s|del|ins|mark|sub|sup|small|ul|ol|li|dl|dt|dd|table|thead|tbody|tfoot|tr|th|td|caption|colgroup|col|h[1-6]|pre|code|blockquote|figure|figcaption|a|img|script|style|iframe|object|embed|form|input|button|select|textarea|svg|details|summary|section|article|header|footer|nav|main|aside|font|center)\b[^>]*>/i;
+
+const RICH_HTML_TAG_PATTERN = /<\/?(?:hr|strong|b|em|i|u|s|del|ins|mark|sub|sup|small|ul|ol|li|dl|dt|dd|table|thead|tbody|tfoot|tr|th|td|caption|colgroup|col|h[1-6]|pre|code|blockquote|figure|figcaption|a|img|script|style|iframe|object|embed|form|input|button|select|textarea|svg|details|summary|section|article|header|footer|nav|main|aside|font|center)\b[^>]*>/i;
+
+const MARKDOWN_SYNTAX_PATTERN = /(?:^|\n)\s*#{1,6}\s+\S|\*\*[^*\n]+\*\*|`[^`\n]+`|(?:^|\n)\s*```|(?:^|\n)\s*(?:[-*+]|\d+\.)\s+\S|!?\[[^\]]+\]\([^)]+\)/m;
+
+const BASIC_ENTITIES: Record<string, string> = {
+  '&nbsp;': ' ',
+  '&quot;': '"',
+  '&#39;': "'",
+  '&apos;': "'",
+  '&amp;': '&',
+};
+
+function stripCodeSpans(input: string): string {
+  return input.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '');
+}
+
+function decodeBasicEntities(input: string): string {
+  return input.replace(/&(?:nbsp|quot|#39|apos|amp);/gi, (entity) => BASIC_ENTITIES[entity.toLowerCase()] ?? entity);
+}
+
+function tryExtractMarkdown(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) { return undefined; }
+  const withoutCode = stripCodeSpans(trimmed);
+  if (!HTML_TAG_PATTERN.test(withoutCode)) {
+    return decodeBasicEntities(trimmed.replace(/\r\n/g, '\n'));
+  }
+  if (!RICH_HTML_TAG_PATTERN.test(withoutCode)) {
+    const unwrapped = decodeBasicEntities(
+      trimmed
+        .replace(/\r\n/g, '\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n\n')
+        .replace(/<\/div>/gi, '\n')
+        .replace(/<\/?(?:p|div|span)\b[^>]*>/gi, '')
+    ).trim();
+    if (!HTML_TAG_PATTERN.test(stripCodeSpans(unwrapped)) && MARKDOWN_SYNTAX_PATTERN.test(unwrapped)) {
+      return unwrapped.replace(/\n{3,}/g, '\n\n');
+    }
+  }
+  return undefined;
+}
+
+function sanitizeMarkdown(
+  markdown: string,
+  base: string,
+  imagePaths?: ReadonlyMap<string, string>,
+  collectedUrls?: string[],
+): string {
+  const withImages = markdown.replace(/!\[((?:\\.|[^\]\\])*)\]\(((?:\([^()\s]*\)|[^()\s])+)\)/g, (_match, rawAlt: string, rawUrl: string) => {
+    const href = safeLink(rawUrl, base);
+    const label = rawAlt.trim() || '图片';
+    if (href && collectedUrls && !collectedUrls.includes(href)) {
+      collectedUrls.push(href);
+    }
+    const localPath = href ? imagePaths?.get(href) : undefined;
+    if (localPath) {
+      return '![' + label + '](' + localPath + ')';
+    }
+    return href ? '[' + label + '（远端图片）](' + href + ')' : '[图片未导入]';
+  });
+  return withImages.replace(/(?<!!)\[((?:\\.|[^\]\\])+)\]\(((?:\([^()\s]*\)|[^()\s])+)\)/g, (_match, label: string, rawUrl: string) => {
+    const href = safeLink(rawUrl, base);
+    return href ? '[' + label + '](' + href + ')' : label;
+  }).trim();
+}
+
 export function htmlToMarkdown(html: string, base: string, imagePaths?: ReadonlyMap<string, string>, collectedUrls?: string[]): string {
+  const extractedMarkdown = tryExtractMarkdown(html);
+  if (extractedMarkdown !== undefined) {
+    return sanitizeMarkdown(extractedMarkdown, base, imagePaths, collectedUrls);
+  }
   const converter = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-' });
   converter.use(gfm);
   const escape = converter.escape.bind(converter);
@@ -143,11 +216,11 @@ export function renderWorkItem(item: WorkItem, connection: Connection, importedA
     '- 远端更新时间：' + inline(fields['System.ChangedDate']),
     '- 本地导入时间：' + importedAt.toISOString(),
     '',
-    section('描述', 'System.Description'),
-    ...(rendererVersion >= 3 ? [section('需求规格（Specifications）', 'Custom.Specifications')] : []),
-    section('验收标准', 'Microsoft.VSTS.Common.AcceptanceCriteria'),
-    ...(rendererVersion >= 3 ? [section('设计说明（Design）', 'Custom.Design')] : []),
-    section('复现步骤', 'Microsoft.VSTS.TCM.ReproSteps'),
+    section('Description', 'System.Description'),
+    ...(rendererVersion >= 3 ? [section('Specifications', 'Custom.Specifications')] : []),
+    section('Acceptance Criteria', 'Microsoft.VSTS.Common.AcceptanceCriteria'),
+    ...(rendererVersion >= 3 ? [section('Design', 'Custom.Design')] : []),
+    section('Repro Steps', 'Microsoft.VSTS.TCM.ReproSteps'),
     imagePaths && imagePaths.size > 0 ?
       '> 评论、附件和历史未导入；图片已下载到本地。' :
       '> 评论、附件和历史未导入；图片仅保留链接。',

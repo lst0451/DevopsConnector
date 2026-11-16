@@ -45,6 +45,9 @@ export function describeChanges(plan: SyncPlan): string {
   if (plan.imagesChanged && !plan.revisionChanged && !plan.templateChanged) {
     changes.push('下载远端图片到本地');
   }
+  if (!changes.length && plan.changed) {
+    changes.push('更新文档内容格式');
+  }
   return changes.join('；');
 }
 export function digest(text: string): string { return createHash('sha256').update(text, 'utf8').digest('hex'); }
@@ -91,7 +94,7 @@ export function parsePending(value: unknown, id: number): PendingWrite {
 export interface ExistingExport { revision: number; importedAt: Date; connection: Connection; rendererVersion: RendererVersion }
 export function readExistingExport(markdown: string, id: number, connection: Connection): ExistingExport {
   const normalized = markdown.replace(/\r\n/g, '\n');
-  const header = normalized.split('\n## 描述')[0] ?? '';
+  const header = normalized.split(/\n## (?:Description|描述)\b/)[0] ?? '';
   const number = /^- ID：([1-9]\d*)$/m.exec(header)?.[1];
   const revision = /^- 修订版本：([1-9]\d*)$/m.exec(header)?.[1];
   const source = /^- 来源：\[Azure DevOps\]\((https:\/\/[^\s]+)\)$/m.exec(header)?.[1];

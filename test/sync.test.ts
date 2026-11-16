@@ -537,3 +537,77 @@ test('symlinked images directory is rejected without writing through it', async 
   await assert.rejects(service.import(42, 'not-real', guard), /符号链接/);
   assert.deepEqual(await fs.readdir(outside), []);
 });
+
+test('check and apply upgrade legacy Chinese section titles and escaped Design Markdown at unchanged revision', async (t) => {
+  const s = await setup(t);
+  const itemWithMarkdownDesign: WorkItem = {
+    id: 42,
+    rev: 81,
+    fields: {
+      'System.TeamProject': 'Demo',
+      'System.Title': '章节标题与设计格式升级',
+      'System.Description': '<p>描述正文</p>',
+      'Custom.Design': '## 1. Summary\n\n- **Item**: `Code[20]` &amp; &quot;Quote&quot;',
+    },
+  };
+  s.client.latest = itemWithMarkdownDesign;
+  const legacyBaseline = [
+    '# 42 — 章节标题与设计格式升级',
+    '> Azure DevOps 需求副本，由 DevOps Connector 管理。请将本地设计与笔记写入独立文件。',
+    '- ID：42',
+    '- 修订版本：81',
+    '- 导出模板版本：3',
+    '- 类型：',
+    '- 状态：',
+    '- 负责人：（未分配）',
+    '- 标签：（无）',
+    '- 项目：Demo',
+    '- 来源：[Azure DevOps](https://vffice.visualstudio.com/Demo/_workitems/edit/42)',
+    '- 远端更新时间：',
+    '- 本地导入时间：2026-11-11T22:00:00.000Z',
+    '',
+    '## 描述',
+    '描述正文',
+    '## 需求规格（Specifications）',
+    '（未提供）',
+    '## 验收标准',
+    '（未提供）',
+    '## 设计说明（Design）',
+    '\\#\\# 1. Summary \\- \\*\\*Item\\*\\*: \\`Code\\[20\\]\\` & "Quote"',
+    '## 复现步骤',
+    '（未提供）',
+    '> 评论、附件和历史未导入；图片仅保留链接。',
+  ].join('\n\n') + '\n';
+
+  await fs.mkdir(s.directory, { recursive: true });
+  await fs.writeFile(s.file, legacyBaseline);
+  await fs.writeFile(path.join(s.directory, STATE_FILE), JSON.stringify({
+    schema: 1,
+    id: 42,
+    connection,
+    title: '章节标题与设计格式升级',
+    revision: 81,
+    rendererVersion: 3,
+    baseline: legacyBaseline,
+    hash: digest(legacyBaseline),
+    exportedAt: '2026-11-11T22:00:00.000Z',
+    status: 'synced',
+  }, null, 2) + '\n');
+
+  const plan = await s.service.check(42, 'not-real', clean);
+  assert.equal(plan.changed, true);
+  assert.equal(plan.revisionChanged, false);
+  assert.equal(plan.templateChanged, false);
+  assert.equal(describeChanges(plan), '更新文档内容格式');
+  await s.service.apply(plan, guard);
+
+  const updated = await fs.readFile(s.file, 'utf8');
+  assert.ok(updated.includes('## Description\n\n描述正文'));
+  assert.ok(updated.includes('## Specifications\n\n（未提供）'));
+  assert.ok(updated.includes('## Acceptance Criteria\n\n（未提供）'));
+  assert.ok(updated.includes('## Design\n\n## 1. Summary\n\n- **Item**: `Code[20]` & "Quote"'));
+  assert.ok(updated.includes('## Repro Steps\n\n（未提供）'));
+
+  const recheck = await s.service.check(42, 'not-real', clean);
+  assert.equal(recheck.changed, false);
+});

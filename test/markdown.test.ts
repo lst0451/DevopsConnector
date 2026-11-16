@@ -24,7 +24,7 @@ test('exports revision, source, assignment and missing-field placeholders', () =
     'System.Title': '开发需求', 'System.AssignedTo': { displayName: '开发者' },
     'System.Description': '<p>需求内容</p>',
   } }, connection, new Date('2026-11-11T12:00:00Z'));
-  for (const expected of ['修订版本：3', '开发者', '需求内容', '验收标准', '（未提供）',
+  for (const expected of ['修订版本：3', '开发者', '需求内容', '## Description', '## Acceptance Criteria', '## Repro Steps', '（未提供）',
     '2026-11-11T12:00:00.000Z', base]) { assert.ok(result.includes(expected), expected); }
 });
 
@@ -59,8 +59,8 @@ test('current template exports Specifications and Design without conflating acce
     'Custom.Design': '<p>设计实现说明</p>',
     'Microsoft.VSTS.Common.AcceptanceCriteria': '<p>独立验收条件</p>',
   } }, connection, new Date('2026-11-11T12:00:00Z'));
-  for (const expected of ['导出模板版本：3', '需求规格（Specifications）', '规格明细',
-    '**金额规则**', '设计说明（Design）', '设计实现说明', '独立验收条件']) {
+  for (const expected of ['导出模板版本：3', '## Specifications', '规格明细',
+    '**金额规则**', '## Design', '设计实现说明', '## Acceptance Criteria', '独立验收条件']) {
     assert.ok(result.includes(expected), expected);
   }
 });
@@ -77,8 +77,8 @@ test('legacy templates keep the original shape and omit newly supported custom f
 
 test('missing custom fields remain explicit and custom HTML receives safety conversion', () => {
   const empty = renderWorkItem({ id: 42, rev: 1, fields: {} }, connection, new Date());
-  assert.match(empty, /## 需求规格（Specifications）\n\n（未提供）/);
-  assert.match(empty, /## 设计说明（Design）\n\n（未提供）/);
+  assert.match(empty, /## Specifications\n\n（未提供）/);
+  assert.match(empty, /## Design\n\n（未提供）/);
   const result = renderWorkItem({ id: 42, rev: 1, fields: {
     'Custom.Specifications': '<script>unsafe()</script><a href="command:evil">规则</a>' +
       '<table><tr><td>表格内容</td></tr></table>',
@@ -134,4 +134,46 @@ test('renderWorkItem uses local image paths when provided and referencedLocalIma
     'images/a-11111111.png',
     'images/design-22222222.jpg',
   ]);
+});
+
+test('preserves raw Markdown in Custom.Design including headings, lists, code and entities', () => {
+  const rawDesign = [
+    '## 1. Summary of Final Requirement Choices (2026-10-30)',
+    '',
+    '1. **Header &amp; Removed Elements**:',
+    '   - Top-left displays **`INVOICE`** and `Sales Invoice Header.&quot;No.&quot;`.',
+    '   - **Remove** `page number 1/1`.',
+    '',
+    '## 2. Technical Design',
+    '',
+    '### 2.1 Report Extension (`RepExt51000.al`)',
+    '',
+    '```al',
+    'var x: Code[20];',
+    '```',
+  ].join('\n');
+
+  const md = renderWorkItem({
+    id: 42,
+    rev: 81,
+    fields: { 'Custom.Design': rawDesign },
+  }, connection, new Date('2026-11-11T12:00:00Z'));
+
+  assert.ok(md.includes('## Design\n\n## 1. Summary of Final Requirement Choices (2026-10-30)\n\n1. **Header & Removed Elements**:'));
+  assert.ok(md.includes('   - Top-left displays **`INVOICE`** and `Sales Invoice Header."No."`.'));
+  assert.ok(md.includes('### 2.1 Report Extension (`RepExt51000.al`)'));
+  assert.ok(md.includes('```al\nvar x: Code[20];\n```'));
+  assert.doesNotMatch(md, /\\\*\\\*|\\##/);
+});
+
+test('unwraps Markdown wrapped in simple p/div/br tags and sanitizes unsafe links and images', () => {
+  const wrapped = '<div>## Heading<br>- **Bold** &amp; `code`<br>[safe](https://example.com) [bad](javascript:evil())<br>![图](https://cdn.example.com/a.png)</div>';
+  assert.deepEqual(extractImageUrlsFromHtml(wrapped, base), ['https://cdn.example.com/a.png']);
+
+  const withoutLocal = htmlToMarkdown(wrapped, base);
+  assert.ok(withoutLocal.includes('## Heading\n- **Bold** & `code`\n[safe](https://example.com/) bad\n[图（远端图片）](https://cdn.example.com/a.png)'));
+  assert.doesNotMatch(withoutLocal, /javascript:/);
+
+  const withLocal = htmlToMarkdown(wrapped, base, new Map([['https://cdn.example.com/a.png', 'images/a-11111111.png']]));
+  assert.ok(withLocal.includes('![图](images/a-11111111.png)'));
 });

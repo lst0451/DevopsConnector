@@ -104,6 +104,7 @@ export class SyncService {
       let revisionChanged = false;
       const templateChanged = state.rendererVersion < CURRENT_RENDERER_VERSION;
       let imagesChanged = false;
+      let formatChanged = false;
       let resolvedImages: { paths: Map<string, string>; files: Map<string, Uint8Array> } | undefined;
       try {
         cancelled(signal);
@@ -116,7 +117,18 @@ export class SyncService {
         const missingLocalImages = imageUrls.length > 0 && Boolean(this.client.downloadImage) &&
           (state.baseline.includes('（远端图片）') || existingRefs.length < imageUrls.length || !(await local.hasFiles(existingRefs)));
         imagesChanged = missingLocalImages;
-        if (imageUrls.length > 0 && this.client.downloadImage && (revisionChanged || templateChanged || missingLocalImages)) {
+        const tentativeImagePaths = imageUrls.length > 0 && existingRefs.length === imageUrls.length ?
+          new Map(imageUrls.map((url, idx) => [url, existingRefs[idx]!])) : undefined;
+        const expectedAtExistingTime = renderWorkItem(
+          item,
+          state.connection,
+          new Date(state.exportedAt),
+          CURRENT_RENDERER_VERSION,
+          tentativeImagePaths,
+        );
+        formatChanged = !revisionChanged && !templateChanged &&
+          expectedAtExistingTime.replace(/\r\n/g, '\n') !== state.baseline.replace(/\r\n/g, '\n');
+        if (imageUrls.length > 0 && this.client.downloadImage && (revisionChanged || templateChanged || missingLocalImages || formatChanged)) {
           resolvedImages = await this.resolveImages(item, token, signal);
           cancelled(signal);
         }
@@ -130,7 +142,7 @@ export class SyncService {
       const checkedAt = this.now().toISOString();
       const document = await local.readDocument();
       const conflict = document === undefined || digest(document) !== state.hash || isDirty();
-      const changed = revisionChanged || templateChanged || imagesChanged;
+      const changed = revisionChanged || templateChanged || imagesChanged || formatChanged;
       const next = changed ? makeState(item, this.connection, checkedAt, resolvedImages?.paths) : state;
       await local.writeState({
         ...state, attemptedAt, checkedAt, error: undefined,
