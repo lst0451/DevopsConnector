@@ -95,13 +95,13 @@ export interface ExistingExport { revision: number; importedAt: Date; connection
 export function readExistingExport(markdown: string, id: number, connection: Connection): ExistingExport {
   const normalized = markdown.replace(/\r\n/g, '\n');
   const header = normalized.split(/\n## (?:Description|描述)\b/)[0] ?? '';
-  const number = /^- ID：([1-9]\d*)$/m.exec(header)?.[1];
-  const revision = /^- 修订版本：([1-9]\d*)$/m.exec(header)?.[1];
-  const source = /^- 来源：\[Azure DevOps\]\((https:\/\/[^\s]+)\)$/m.exec(header)?.[1];
-  const importedAt = /^- 本地导入时间：(.+)$/m.exec(header)?.[1];
+  const number = /^- ID(?:：|: )([1-9]\d*)$/m.exec(header)?.[1];
+  const revision = /^- (?:Revision: |修订版本：)([1-9]\d*)$/m.exec(header)?.[1];
+  const source = /^- (?:Source: |来源：)\[Azure DevOps\]\((https:\/\/[^\s]+)\)$/m.exec(header)?.[1];
+  const importedAt = /^- (?:Exported At: |本地导入时间：)(.+)$/m.exec(header)?.[1];
   const legacy = header.includes('> Azure DevOps 需求副本。请将本地设计与笔记写入独立文件；此版本仅支持首次导入。');
   const modern = header.includes('> Azure DevOps 需求副本，由 DevOps Connector 管理。请将本地设计与笔记写入独立文件。');
-  const declaredTemplate = /^- 导出模板版本：(.*)$/m.exec(header)?.[1];
+  const declaredTemplate = /^- (?:Template Version: |导出模板版本：)(.*)$/m.exec(header)?.[1];
   if (declaredTemplate !== undefined && (declaredTemplate !== '3' || !modern || legacy)) {
     throw new UserError('导出模板版本无法识别，不能安全接入跟踪。请保留原文件。');
   }
@@ -116,4 +116,10 @@ export function readExistingExport(markdown: string, id: number, connection: Con
     connection: { organizationUrl: parsed.organizationUrl, project: parsed.project },
     rendererVersion: declaredTemplate === '3' ? 3 : legacy ? 1 : 2,
   };
+}
+
+export function readWorkItemState(markdown: string): string | undefined {
+  const header = markdown.replace(/\r\n/g, '\n').split(/\n## (?:Description|描述)\b/)[0] ?? '';
+  const value = /^- (?:State: |状态：)(.*)$/m.exec(header)?.[1]?.trim();
+  return value ? value.replace(/\\([\\*_{}\[\]()#+.!|~])/g, '$1') : undefined;
 }

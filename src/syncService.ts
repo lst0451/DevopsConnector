@@ -1,12 +1,12 @@
 import { AzureDevOpsClient, buildLocalImagePath } from './azureDevOpsClient';
 import { CURRENT_RENDERER_VERSION, extractImageUrls, referencedLocalImages, renderWorkItem } from './markdown';
 import { SyncRepository } from './syncRepository';
-import { assertSource, digest, readExistingExport, SyncPlan, SyncState, SyncStatus } from './syncModel';
+import { assertSource, digest, readExistingExport, readWorkItemState, SyncPlan, SyncState, SyncStatus } from './syncModel';
 import { Connection, UserError, WorkItem } from './types';
 
 type Client = Pick<AzureDevOpsClient, 'getWorkItem' | 'getWorkItemRevision'> &
   Partial<Pick<AzureDevOpsClient, 'downloadImage'>>;
-export interface TrackedItem { id: number; title: string; status: SyncStatus; revision?: number; rendererVersion?: number; checkedAt?: string; detail: string }
+export interface TrackedItem { id: number; title: string; workItemState?: string; status: SyncStatus; revision?: number; rendererVersion?: number; checkedAt?: string; detail: string }
 export class ExistingFileMismatch extends UserError {
   constructor(readonly local: string, readonly expected: string) {
     super('本地文件与对应的历史修订不一致，可能有本地修改。未建立跟踪；请先保留笔记并核对差异。');
@@ -184,7 +184,8 @@ export class SyncService {
         const conflict = local === undefined || digest(local) !== state.hash;
         const templateChanged = state.rendererVersion < CURRENT_RENDERER_VERSION;
         result.push({
-          id, title: state.title, revision: state.revision, rendererVersion: state.rendererVersion, checkedAt: state.checkedAt,
+          id, title: state.title, workItemState: readWorkItemState(state.baseline),
+          revision: state.revision, rendererVersion: state.rendererVersion, checkedAt: state.checkedAt,
           status: conflict ? 'conflict' : state.status === 'error' ? 'error' : templateChanged ? 'updateAvailable' : state.status,
           detail: conflict ? '本地文件已修改或缺失' : [state.error,
             templateChanged ? '导出模板需升级至 ' + CURRENT_RENDERER_VERSION + '，请执行同步补全内容' : undefined].filter(Boolean).join('；'),

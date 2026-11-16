@@ -74,7 +74,8 @@ export function registerSyncCommands(context: vscode.ExtensionContext, client: A
     const selected = await vscode.window.showQuickPick(items.map((item) => ({
       label: '#' + item.id + ' ' + item.title,
       description: labels[isDirty(current, item.id) ? 'conflict' : item.status],
-      detail: (item.revision === undefined ? '' : '本地修订 ' + item.revision + ' · ') +
+      detail: (item.workItemState ? 'State: ' + item.workItemState + ' · ' : '') +
+        (item.revision === undefined ? '' : '本地修订 ' + item.revision + ' · ') +
         (item.rendererVersion === undefined ? '' : '导出模板 ' + item.rendererVersion + ' · ') +
         (item.checkedAt ? '上次成功检查 ' + item.checkedAt : '尚未检查最新版本') +
         (item.detail ? ' · ' + item.detail : ''),

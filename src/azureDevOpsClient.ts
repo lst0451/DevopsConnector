@@ -206,6 +206,7 @@ export class AzureDevOpsClient {
       const response = await this.fetcher(url, {
         method: 'GET',
         headers,
+        cache: 'no-store',
         // Never send the PAT through an authentication or cross-origin redirect.
         redirect: 'error',
         signal: controller.signal,

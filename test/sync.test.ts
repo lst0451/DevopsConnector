@@ -409,7 +409,7 @@ test('remote and template upgrades report both reasons', async (t) => {
 test('explicit renderer version allows reattachment and rejects unsupported versions', () => {
   const exported = renderWorkItem(fixture(), connection, now());
   assert.equal(readExistingExport(exported, 42, connection).rendererVersion, 3);
-  assert.throws(() => readExistingExport(exported.replace('导出模板版本：3', '导出模板版本：999'),
+  assert.throws(() => readExistingExport(exported.replace('Template Version: 3', 'Template Version: 999'),
     42, connection), /导出模板版本无法识别/);
 });
 
@@ -546,6 +546,8 @@ test('check and apply upgrade legacy Chinese section titles and escaped Design M
     fields: {
       'System.TeamProject': 'Demo',
       'System.Title': '章节标题与设计格式升级',
+      'System.State': 'Ready for Functional test',
+      'System.Reason': 'Moved out of state Development',
       'System.Description': '<p>描述正文</p>',
       'Custom.Design': '## 1. Summary\n\n- **Item**: `Code[20]` &amp; &quot;Quote&quot;',
     },
@@ -558,7 +560,7 @@ test('check and apply upgrade legacy Chinese section titles and escaped Design M
     '- 修订版本：81',
     '- 导出模板版本：3',
     '- 类型：',
-    '- 状态：',
+    '- 状态：Pending Approval',
     '- 负责人：（未分配）',
     '- 标签：（无）',
     '- 项目：Demo',
@@ -602,12 +604,30 @@ test('check and apply upgrade legacy Chinese section titles and escaped Design M
   await s.service.apply(plan, guard);
 
   const updated = await fs.readFile(s.file, 'utf8');
+  assert.ok(updated.includes('- State: Ready for Functional test'));
+  assert.ok(updated.includes('- Reason: Moved out of state Development'));
   assert.ok(updated.includes('## Description\n\n描述正文'));
   assert.ok(updated.includes('## Specifications\n\n（未提供）'));
   assert.ok(updated.includes('## Acceptance Criteria\n\n（未提供）'));
   assert.ok(updated.includes('## Design\n\n## 1. Summary\n\n- **Item**: `Code[20]` & "Quote"'));
   assert.ok(updated.includes('## Repro Steps\n\n（未提供）'));
+  assert.equal((await s.service.list())[0]?.workItemState, 'Ready for Functional test');
 
   const recheck = await s.service.check(42, 'not-real', clean);
   assert.equal(recheck.changed, false);
+
+  s.client.latest = {
+    ...itemWithMarkdownDesign,
+    rev: 82,
+    fields: {
+      ...itemWithMarkdownDesign.fields,
+      'System.State': 'Closed',
+    },
+  };
+  const nextPlan = await s.service.check(42, 'not-real', clean);
+  assert.equal(nextPlan.changed, true);
+  await s.service.apply(nextPlan, guard);
+  const afterStateChange = await fs.readFile(s.file, 'utf8');
+  assert.ok(afterStateChange.includes('- State: Closed'));
+  assert.equal((await s.service.list())[0]?.workItemState, 'Closed');
 });

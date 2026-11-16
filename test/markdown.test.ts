@@ -22,10 +22,32 @@ test('converts description formatting and preserves Unicode', () => {
 test('exports revision, source, assignment and missing-field placeholders', () => {
   const result = renderWorkItem({ id: 42, rev: 3, fields: {
     'System.Title': '开发需求', 'System.AssignedTo': { displayName: '开发者' },
+    'System.WorkItemType': 'User Story',
+    'System.State': 'Ready for Functional test',
+    'System.Reason': 'Moved out of state Development',
+    'System.AreaPath': 'VFF070.Pro-Demnity',
+    'System.IterationPath': 'VFF070.Pro-Demnity\\SPRINTS\\SPRINT 2',
+    'System.Tags': 'pending approval',
+    'System.ChangedDate': '2026-11-12T19:36:21.187Z',
     'System.Description': '<p>需求内容</p>',
   } }, connection, new Date('2026-11-11T12:00:00Z'));
-  for (const expected of ['修订版本：3', '开发者', '需求内容', '## Description', '## Acceptance Criteria', '## Repro Steps', '（未提供）',
-    '2026-11-11T12:00:00.000Z', base]) { assert.ok(result.includes(expected), expected); }
+  for (const expected of [
+    '- ID: 42',
+    '- Revision: 3',
+    '- Template Version: 3',
+    '- Work Item Type: User Story',
+    '- State: Ready for Functional test',
+    '- Reason: Moved out of state Development',
+    '- Assigned To: 开发者',
+    '- Area: VFF070\\.Pro-Demnity',
+    '- Iteration: VFF070\\.Pro-Demnity\\\\SPRINTS\\\\SPRINT 2',
+    '- Tags: pending approval',
+    '- Project: My Project',
+    '- Source: [Azure DevOps](' + base + ')',
+    '- Changed Date: 2026-11-12T19:36:21\\.187Z',
+    '- Exported At: 2026-11-11T12:00:00.000Z',
+    '需求内容', '## Description', '## Acceptance Criteria', '## Repro Steps', '（未提供）',
+  ]) { assert.ok(result.includes(expected), expected); }
 });
 
 test('drops active content, unsafe links and renders images only as links', () => {
@@ -59,7 +81,7 @@ test('current template exports Specifications and Design without conflating acce
     'Custom.Design': '<p>设计实现说明</p>',
     'Microsoft.VSTS.Common.AcceptanceCriteria': '<p>独立验收条件</p>',
   } }, connection, new Date('2026-11-11T12:00:00Z'));
-  for (const expected of ['导出模板版本：3', '## Specifications', '规格明细',
+  for (const expected of ['Template Version: 3', '## Specifications', '规格明细',
     '**金额规则**', '## Design', '设计实现说明', '## Acceptance Criteria', '独立验收条件']) {
     assert.ok(result.includes(expected), expected);
   }
@@ -70,7 +92,7 @@ test('legacy templates keep the original shape and omit newly supported custom f
     const result = renderWorkItem({ id: 42, rev: 73, fields: {
       'Custom.Specifications': '<p>新字段内容</p>', 'Custom.Design': '<p>新设计内容</p>',
     } }, connection, new Date('2026-11-11T12:00:00Z'), version);
-    assert.doesNotMatch(result, /导出模板版本|Specifications|Design|新字段内容|新设计内容/);
+    assert.doesNotMatch(result, /Template Version|导出模板版本|Specifications|Design|新字段内容|新设计内容/);
     assert.ok(result.includes('此版本仅支持首次导入') === (version === 1));
   }
 });

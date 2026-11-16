@@ -85,7 +85,7 @@ PAT 按“工作区文件夹 + 组织”保存在 VS Code SecretStorage。可通
         └── notes.md          可自行创建，插件不管理
 ~~~
 
-内容包括标题、类型、状态、负责人、标签、Description、Specifications（`Custom.Specifications`）、Acceptance Criteria、Design（`Custom.Design`）、Repro Steps、修订版本、导出模板版本、来源链接与时间。正文章节标题按 Azure DevOps 原文显示；自定义规格/设计与标准验收字段分别展示，不互相替代。未提供的字段明确显示占位。时间以 UTC ISO 格式保存。
+内容包括标题、ID、Revision、Template Version、Work Item Type、State、Reason、Assigned To、Area、Iteration、Tags、Project、Source、Changed Date、Exported At 等英文元数据字段，以及 Description、Specifications（`Custom.Specifications`）、Acceptance Criteria、Design（`Custom.Design`）、Repro Steps 正文章节。所有元数据标签与正文章节标题均按 Azure DevOps 原文显示；自定义规格/设计与标准验收字段分别展示，不互相替代。未提供的字段明确显示占位。时间以 UTC ISO 格式保存。
 
 Work Item 正文中的 HTTPS 图片会在导入或同步时自动下载到本地 `images/` 目录，并在 `workitem.md` 中使用相对路径引用（`![...](images/...)`）。若字段本身为 Markdown 格式（例如 `Design`），将保留其原始 Markdown 结构而非转义折叠。HTML 转换保留常见标题、列表、代码和简单表格；复杂富文本不保证与网页完全一致。
 

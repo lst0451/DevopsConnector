@@ -31,7 +31,7 @@ test('imports a mocked Azure work item end-to-end without persisting the token',
     renderWorkItem(item, connection, new Date('2026-11-11T12:00:00Z')));
   const result = await fs.readFile(file, 'utf8');
   assert.match(result, /测试任务/);
-  assert.match(result, /修订版本：7/);
+  assert.match(result, /Revision: 7/);
   assert.match(result, /本地文件完整/);
   assert.doesNotMatch(result, /test-only-token-value/);
   assert.deepEqual(await fs.readdir(path.dirname(file)), ['workitem.md']);
