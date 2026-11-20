@@ -1,3 +1,4 @@
+import { Language, t } from './i18n';
 import { createHash } from 'node:crypto';
 import { Connection, UserError } from './types';
 import { RendererVersion } from './markdown';
@@ -38,17 +39,17 @@ export interface SyncPlan {
 }
 export function describeChanges(plan: SyncPlan): string {
   const changes: string[] = [];
-  if (plan.revisionChanged) { changes.push('远端修订 ' + plan.previous.revision + ' → ' + plan.next.revision); }
+  if (plan.revisionChanged) { changes.push(t('远端修订 ') + plan.previous.revision + ' → ' + plan.next.revision); }
   if (plan.templateChanged) {
-    changes.push('导出模板 ' + plan.previous.rendererVersion + ' → ' + plan.next.rendererVersion + '（补全文档内容）');
+    changes.push(t('导出模板 ') + plan.previous.rendererVersion + ' → ' + plan.next.rendererVersion + t('（补全文档内容）'));
   }
   if (plan.imagesChanged && !plan.revisionChanged && !plan.templateChanged) {
-    changes.push('下载远端图片到本地');
+    changes.push(t('下载远端图片到本地'));
   }
   if (!changes.length && plan.changed) {
-    changes.push('更新文档内容格式');
+    changes.push(t('更新文档内容格式'));
   }
-  return changes.join('；');
+  return changes.join(t('；'));
 }
 export function digest(text: string): string { return createHash('sha256').update(text, 'utf8').digest('hex'); }
 export function sameSource(a: Connection, b: Connection): boolean {
@@ -57,7 +58,7 @@ export function sameSource(a: Connection, b: Connection): boolean {
 }
 export function assertSource(state: SyncState, connection: Connection): void {
   if (!sameSource(state.connection, connection)) {
-    throw new UserError('跟踪项的组织或项目与当前配置不同；请切回原配置。没有移动或覆盖文件。');
+    throw new UserError(t('跟踪项的组织或项目与当前配置不同；请切回原配置。没有移动或覆盖文件。'));
   }
 }
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -76,7 +77,7 @@ export function parseState(value: unknown, id: number): SyncState {
     (value.attemptedAt !== undefined && !isTime(value.attemptedAt)) ||
     !['synced', 'unchanged', 'updateAvailable', 'conflict', 'error'].includes(value.status as string) ||
     (value.error !== undefined && typeof value.error !== 'string')) {
-    throw new UserError('同步状态文件无效或已损坏。已保留需求文件，请勿直接删除恢复记录。');
+    throw new UserError(t('同步状态文件无效或已损坏。已保留需求文件，请勿直接删除恢复记录。'));
   }
   normalizeOrganization(value.connection.organizationUrl);
   validateProject(value.connection.project);
@@ -86,12 +87,12 @@ export function parseState(value: unknown, id: number): SyncState {
 export function parsePending(value: unknown, id: number): PendingWrite {
   if (!isObject(value) || value.schema !== 1 ||
     (value.beforeHash !== null && (typeof value.beforeHash !== 'string' || !/^[a-f0-9]{64}$/.test(value.beforeHash)))) {
-    throw new UserError('同步恢复记录无效，已停止写入。');
+    throw new UserError(t('同步恢复记录无效，已停止写入。'));
   }
   return { schema: 1, beforeHash: value.beforeHash as string | null, after: parseState(value.after, id) };
 }
 
-export interface ExistingExport { revision: number; importedAt: Date; connection: Connection; rendererVersion: RendererVersion }
+export interface ExistingExport { language: Language; revision: number; importedAt: Date; connection: Connection; rendererVersion: RendererVersion }
 export function readExistingExport(markdown: string, id: number, connection: Connection): ExistingExport {
   const normalized = markdown.replace(/\r\n/g, '\n');
   const header = normalized.split(/\n## (?:Description|描述)\b/)[0] ?? '';
@@ -99,19 +100,20 @@ export function readExistingExport(markdown: string, id: number, connection: Con
   const revision = /^- (?:Revision: |修订版本：)([1-9]\d*)$/m.exec(header)?.[1];
   const source = /^- (?:Source: |来源：)\[Azure DevOps\]\((https:\/\/[^\s]+)\)$/m.exec(header)?.[1];
   const importedAt = /^- (?:Exported At: |本地导入时间：)(.+)$/m.exec(header)?.[1];
-  const legacy = header.includes('> Azure DevOps 需求副本。请将本地设计与笔记写入独立文件；此版本仅支持首次导入。');
-  const modern = header.includes('> Azure DevOps 需求副本，由 DevOps Connector 管理。请将本地设计与笔记写入独立文件。');
+  const legacy = (header.includes('> Azure DevOps 需求副本。请将本地设计与笔记写入独立文件；此版本仅支持首次导入。') || header.includes(t('> Azure DevOps 需求副本。请将本地设计与笔记写入独立文件；此版本仅支持首次导入。', 'en')));
+  const modern = (header.includes('> Azure DevOps 需求副本，由 DevOps Connector 管理。请将本地设计与笔记写入独立文件。') || header.includes(t('> Azure DevOps 需求副本，由 DevOps Connector 管理。请将本地设计与笔记写入独立文件。', 'en')));
   const declaredTemplate = /^- (?:Template Version: |导出模板版本：)(.*)$/m.exec(header)?.[1];
   if (declaredTemplate !== undefined && (declaredTemplate !== '3' || !modern || legacy)) {
-    throw new UserError('导出模板版本无法识别，不能安全接入跟踪。请保留原文件。');
+    throw new UserError(t('导出模板版本无法识别，不能安全接入跟踪。请保留原文件。'));
   }
   if (Number(number) !== id || !revision || !source || !importedAt || !isTime(importedAt) || (!legacy && !modern)) {
-    throw new UserError('无法识别原始导出文件的来源、修订和导入时间，不能安全建立跟踪基线。');
+    throw new UserError(t('无法识别原始导出文件的来源、修订和导入时间，不能安全建立跟踪基线。'));
   }
   parseWorkItemInput(source, connection);
   const parsed = parseOrganizationInput(source.slice(0, source.lastIndexOf('/_workitems/edit/')));
-  if (!parsed.project) { throw new UserError('原始导出文件缺少项目。'); }
+  if (!parsed.project) { throw new UserError(t('原始导出文件缺少项目。')); }
   return {
+    language: header.split('\n').some(line => line.startsWith('> Azure DevOps work item copy')) ? 'en' : 'zh-CN',
     revision: validateId(revision), importedAt: new Date(importedAt),
     connection: { organizationUrl: parsed.organizationUrl, project: parsed.project },
     rendererVersion: declaredTemplate === '3' ? 3 : legacy ? 1 : 2,

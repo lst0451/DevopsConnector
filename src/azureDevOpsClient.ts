@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import { createHash } from 'node:crypto';
 import { Connection, UserError, WorkItem, WorkItemComment } from './types';
 import { isSameOrganizationUrl, normalizeOrganization, validateId, validateProject } from './validation';
@@ -125,11 +126,11 @@ export function resolveCommentMentions(text: string, identities: ReadonlyMap<str
 export function validateWorkItem(value: unknown, id: number, project: string): WorkItem {
   if (!isRecord(value) || value.id !== id || !Number.isInteger(value.rev) ||
       (value.rev as number) < 1 || !isRecord(value.fields)) {
-    throw new UserError('Azure DevOps 返回的 Work Item 数据格式无效。');
+    throw new UserError(t('Azure DevOps 返回的 Work Item 数据格式无效。'));
   }
   if (typeof value.fields['System.TeamProject'] !== 'string' ||
       value.fields['System.TeamProject'].toLowerCase() !== project.toLowerCase()) {
-    throw new UserError('返回的 Work Item 不属于配置的项目，未保存文件。');
+    throw new UserError(t('返回的 Work Item 不属于配置的项目，未保存文件。'));
   }
   return { id, rev: value.rev as number, fields: value.fields };
 }
@@ -156,7 +157,7 @@ export class AzureDevOpsClient {
     const organization = normalizeOrganization(connection.organizationUrl);
     const project = validateProject(connection.project);
     validateId(String(id));
-    if (!token.trim()) { throw new UserError('请先设置 Personal Access Token。'); }
+    if (!token.trim()) { throw new UserError(t('请先设置 Personal Access Token。')); }
     const identities = new Map<string, string>(fieldIdentities);
     const rawComments: WorkItemComment[] = [];
     const seenTokens = new Set<string>();
@@ -168,7 +169,7 @@ export class AzureDevOpsClient {
         '&api-version=7.1-preview.4';
       const data = await this.fetchJson(url, token, signal);
       if (!isRecord(data) || !Array.isArray(data.comments)) {
-        throw new UserError('Azure DevOps 返回的评论数据格式无效。');
+        throw new UserError(t('Azure DevOps 返回的评论数据格式无效。'));
       }
       for (const entry of data.comments) {
         if (!isRecord(entry) || entry.isDeleted === true) { continue; }
@@ -206,12 +207,12 @@ export class AzureDevOpsClient {
     validateProject(connection.project);
     let url: URL;
     try { url = new URL(imageUrl.trim()); }
-    catch { throw new UserError('图片地址无效，仅支持 HTTPS 地址。'); }
+    catch { throw new UserError(t('图片地址无效，仅支持 HTTPS 地址。')); }
     if (url.protocol !== 'https:' || url.username || url.password || url.port) {
-      throw new UserError('图片地址必须是无凭据和端口的 HTTPS 地址。');
+      throw new UserError(t('图片地址必须是无凭据和端口的 HTTPS 地址。'));
     }
     const sameOrg = isSameOrganizationUrl(url.href, connection.organizationUrl);
-    if (sameOrg && !token.trim()) { throw new UserError('请先设置 Personal Access Token。'); }
+    if (sameOrg && !token.trim()) { throw new UserError(t('请先设置 Personal Access Token。')); }
     const headers: Record<string, string> = {
       Accept: 'image/*, application/octet-stream;q=0.9, */*;q=0.1',
     };
@@ -220,25 +221,25 @@ export class AzureDevOpsClient {
     }
     const { data, contentType } = await this.fetchBinary(url.href, headers, MAX_IMAGE_BYTES, {
       statusMessages: {
-        401: '认证失败：下载图片时 PAT 无效或已过期，请重新设置。',
-        403: '访问被拒绝：无权下载图片，请确认账号权限及 PAT 的 Work Items (Read) 权限。',
-        404: '找不到远端图片，或当前账号无权访问。',
-        429: '图片下载请求过于频繁，请稍后重试。',
+        401: t('认证失败：下载图片时 PAT 无效或已过期，请重新设置。'),
+        403: t('访问被拒绝：无权下载图片，请确认账号权限及 PAT 的 Work Items (Read) 权限。'),
+        404: t('找不到远端图片，或当前账号无权访问。'),
+        429: t('图片下载请求过于频繁，请稍后重试。'),
       },
-      defaultStatus: (status) => '图片下载失败，HTTP ' + status + '。',
+      defaultStatus: (status) => t('图片下载失败，HTTP ') + status + t('。'),
       validateContentType: (type) => {
         if (type.includes('text/html') || type.includes('application/xhtml')) {
-          return '图片下载未返回二进制内容，可能是登录页或代理响应；请检查连接和凭据。';
+          return t('图片下载未返回二进制内容，可能是登录页或代理响应；请检查连接和凭据。');
         }
         return undefined;
       },
-      emptyMessage: '下载的图片内容为空。',
-      oversizedMessage: '图片大小超过 20 MB，本次导入已停止。',
-      abortedMessage: '已取消下载图片。',
-      networkMessage: '无法下载远端图片。请检查网络、HTTPS 证书、代理或登录重定向。',
+      emptyMessage: t('下载的图片内容为空。'),
+      oversizedMessage: t('图片大小超过 20 MB，本次导入已停止。'),
+      abortedMessage: t('已取消下载图片。'),
+      networkMessage: t('无法下载远端图片。请检查网络、HTTPS 证书、代理或登录重定向。'),
     }, signal);
     if (data.byteLength === 0) {
-      throw new UserError('下载的图片内容为空。');
+      throw new UserError(t('下载的图片内容为空。'));
     }
     return { data, contentType };
   }
@@ -249,33 +250,33 @@ export class AzureDevOpsClient {
       Authorization: 'Basic ' + Buffer.from(':' + token.trim()).toString('base64'),
     }, MAX_RESPONSE_BYTES, {
       statusMessages: {
-        401: '认证失败：PAT 无效或已过期，请重新设置。',
-        403: '访问被拒绝：请确认账号权限及 PAT 的 Work Items (Read) 权限。',
-        404: '找不到 Work Item，或当前账号无权访问；请检查组织、项目和 ID。',
-        429: 'Azure DevOps 请求过于频繁，请稍后重试。',
+        401: t('认证失败：PAT 无效或已过期，请重新设置。'),
+        403: t('访问被拒绝：请确认账号权限及 PAT 的 Work Items (Read) 权限。'),
+        404: t('找不到 Work Item，或当前账号无权访问；请检查组织、项目和 ID。'),
+        429: t('Azure DevOps 请求过于频繁，请稍后重试。'),
       },
-      defaultStatus: (status) => 'Azure DevOps 请求失败，HTTP ' + status + '。',
+      defaultStatus: (status) => t('Azure DevOps 请求失败，HTTP ') + status + t('。'),
       validateContentType: (_type, rawHeader) => !rawHeader?.includes('application/json') ?
-        '服务未返回 JSON，可能是登录页或代理响应；请检查连接和凭据。' : undefined,
-      emptyMessage: '服务返回了空响应。',
-      oversizedMessage: 'Work Item 响应超过 5 MB，本次导入已停止。',
-      abortedMessage: '已取消导入。',
-      networkMessage: '无法连接 Azure DevOps。请检查网络、HTTPS 证书、代理或登录重定向。',
+        t('服务未返回 JSON，可能是登录页或代理响应；请检查连接和凭据。') : undefined,
+      emptyMessage: t('服务返回了空响应。'),
+      oversizedMessage: t('Work Item 响应超过 5 MB，本次导入已停止。'),
+      abortedMessage: t('已取消导入。'),
+      networkMessage: t('无法连接 Azure DevOps。请检查网络、HTTPS 证书、代理或登录重定向。'),
     }, signal);
     try { return JSON.parse(Buffer.from(rawBytes).toString('utf8')); }
-    catch { throw new UserError('服务返回的 JSON 无法解析。'); }
+    catch { throw new UserError(t('服务返回的 JSON 无法解析。')); }
   }
 
   private async request(connection: Connection, id: number, token: string, signal?: AbortSignal, revision?: number): Promise<WorkItem> {
     const organization = normalizeOrganization(connection.organizationUrl);
     const project = validateProject(connection.project);
     validateId(String(id));
-    if (!token.trim()) { throw new UserError('请先设置 Personal Access Token。'); }
+    if (!token.trim()) { throw new UserError(t('请先设置 Personal Access Token。')); }
     const url = organization + '/' + encodeURIComponent(project) +
       '/_apis/wit/workitems/' + id + (revision === undefined ? '' : '/revisions/' + revision) + '?api-version=7.1';
     const data = await this.fetchJson(url, token, signal);
     const item = validateWorkItem(data, id, project);
-    if (revision !== undefined && item.rev !== revision) { throw new UserError('返回的历史修订号不一致，已停止操作。'); }
+    if (revision !== undefined && item.rev !== revision) { throw new UserError(t('返回的历史修订号不一致，已停止操作。')); }
     return item;
   }
 
@@ -339,7 +340,7 @@ export class AzureDevOpsClient {
     } catch (error) {
       if (signal?.aborted) { throw new UserError(messages.abortedMessage); }
       if (error instanceof UserError) { throw error; }
-      if (controller.signal.aborted) { throw new UserError('请求超时（20 秒），请稍后重试。'); }
+      if (controller.signal.aborted) { throw new UserError(t('请求超时（20 秒），请稍后重试。')); }
       // Raw network errors can contain URLs or credentials; do not show or log them.
       throw new UserError(messages.networkMessage);
     } finally {

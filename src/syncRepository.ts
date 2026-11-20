@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -13,14 +14,14 @@ async function safeRead(file: string): Promise<string | undefined> {
   try {
     const stat = await fs.lstat(file);
     if (stat.isSymbolicLink() || !stat.isFile() || stat.size > MAX_FILE_SIZE) {
-      throw new UserError('同步文件不是普通文件、包含链接或超过大小限制，已停止操作。');
+      throw new UserError(t('同步文件不是普通文件、包含链接或超过大小限制，已停止操作。'));
     }
     return await fs.readFile(file, 'utf8');
   } catch (error) { if (code(error, 'ENOENT')) { return undefined; } throw error; }
 }
 function json(text: string): unknown {
   try { return JSON.parse(text); }
-  catch { throw new UserError('同步状态或恢复记录不是有效 JSON，已停止操作。'); }
+  catch { throw new UserError(t('同步状态或恢复记录不是有效 JSON，已停止操作。')); }
 }
 function validateImageRelativePath(relativePath: string): [string, string] {
   const parts = relativePath.split('/');
@@ -28,7 +29,7 @@ function validateImageRelativePath(relativePath: string): [string, string] {
   if (parts.length !== 2 || parts[0] !== 'images' || !fileName ||
     !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,120}\.(png|jpg|jpeg|gif|webp|bmp|ico)$/.test(fileName) ||
     /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(fileName)) {
-    throw new UserError('本地图片路径无效，已停止操作。');
+    throw new UserError(t('本地图片路径无效，已停止操作。'));
   }
   return ['images', fileName];
 }
@@ -44,7 +45,7 @@ async function safeDirectory(root: string, parts: string[], create: boolean): Pr
     try { stat = await fs.lstat(directory); }
     catch (error) { if (code(error, 'ENOENT')) { return undefined; } throw error; }
     if (!stat.isDirectory() || stat.isSymbolicLink()) {
-      throw new UserError('同步目录包含符号链接、目录联接或非目录项，已停止操作。');
+      throw new UserError(t('同步目录包含符号链接、目录联接或非目录项，已停止操作。'));
     }
   }
   return directory;
@@ -83,14 +84,14 @@ export class LockedItem {
     const state = await this.state();
     if ((state && !sameSource(state.connection, pending.after.connection)) ||
         (state?.hash ?? null) !== pending.beforeHash && state?.hash !== pending.after.hash) {
-      throw new UserError('恢复记录与当前跟踪基线不一致，已保留全部文件。');
+      throw new UserError(t('恢复记录与当前跟踪基线不一致，已保留全部文件。'));
     }
     const document = await this.readDocument();
     const hash = document === undefined ? null : digest(document);
     if (hash === pending.after.hash) {
       await this.writeState(pending.after);
     } else if (hash !== pending.beforeHash || (state?.hash ?? null) !== pending.beforeHash) {
-      throw new UserError('上次同步中断后文件又被修改；请保留 pending 和状态文件，先人工核对。');
+      throw new UserError(t('上次同步中断后文件又被修改；请保留 pending 和状态文件，先人工核对。'));
     }
     // No document is ever changed during recovery.
     await fs.unlink(file);
@@ -103,7 +104,7 @@ export class LockedItem {
     try { dirStat = await fs.lstat(imagesDir); }
     catch (error) { if (code(error, 'ENOENT')) { return false; } throw error; }
     if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
-      throw new UserError('图片目录包含符号链接、目录联接或非目录项，已停止操作。');
+      throw new UserError(t('图片目录包含符号链接、目录联接或非目录项，已停止操作。'));
     }
     for (const relativePath of paths) {
       const [, fileName] = validateImageRelativePath(relativePath);
@@ -112,7 +113,7 @@ export class LockedItem {
       try { stat = await fs.lstat(target); }
       catch (error) { if (code(error, 'ENOENT')) { return false; } throw error; }
       if (stat.isSymbolicLink() || !stat.isFile()) {
-        throw new UserError('图片文件不是普通文件或包含符号链接，已停止操作。');
+        throw new UserError(t('图片文件不是普通文件或包含符号链接，已停止操作。'));
       }
     }
     return true;
@@ -124,7 +125,7 @@ export class LockedItem {
     catch (error) { if (!code(error, 'EEXIST')) { throw error; } }
     const dirStat = await fs.lstat(imagesDir);
     if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
-      throw new UserError('图片目录包含符号链接、目录联接或非目录项，已停止操作。');
+      throw new UserError(t('图片目录包含符号链接、目录联接或非目录项，已停止操作。'));
     }
     for (const [relativePath, data] of images) {
       const [, fileName] = validateImageRelativePath(relativePath);
@@ -132,7 +133,7 @@ export class LockedItem {
       try {
         const existingStat = await fs.lstat(target);
         if (existingStat.isSymbolicLink() || !existingStat.isFile()) {
-          throw new UserError('图片文件不是普通文件或包含符号链接，已停止操作。');
+          throw new UserError(t('图片文件不是普通文件或包含符号链接，已停止操作。'));
         }
       } catch (error) {
         if (!code(error, 'ENOENT')) { throw error; }
@@ -149,7 +150,7 @@ export class LockedItem {
   async commit(next: SyncState, expectedHash: string | null, guard: () => void, images?: ReadonlyMap<string, Uint8Array>): Promise<void> {
     const document = await this.readDocument();
     if ((document === undefined ? null : digest(document)) !== expectedHash) {
-      throw new UserError('本地文件已变化，已停止覆盖。请重新检查差异。');
+      throw new UserError(t('本地文件已变化，已停止覆盖。请重新检查差异。'));
     }
     const pending: PendingWrite = { schema: 1, beforeHash: expectedHash, after: next };
     const journal = path.join(this.directory, PENDING_FILE);
@@ -157,7 +158,7 @@ export class LockedItem {
     const again = await this.readDocument();
     if ((again === undefined ? null : digest(again)) !== expectedHash) {
       await fs.unlink(journal);
-      throw new UserError('保存前检测到本地变化，未覆盖。');
+      throw new UserError(t('保存前检测到本地变化，未覆盖。'));
     }
     try { guard(); }
     catch (error) { await fs.unlink(journal); throw error; }
@@ -167,7 +168,7 @@ export class LockedItem {
         try {
           const latest = await this.readDocument();
           if ((latest === undefined ? null : digest(latest)) !== expectedHash) {
-            throw new UserError('文件准备期间出现本地修改，未覆盖。');
+            throw new UserError(t('文件准备期间出现本地修改，未覆盖。'));
           }
           guard();
           await this.writeImages(images);
@@ -192,13 +193,13 @@ export class SyncRepository {
   async withItem<T>(id: number, create: boolean, action: (item: LockedItem) => Promise<T>): Promise<T> {
     validateId(String(id));
     const directory = await safeDirectory(this.root, [...validateDirectory(this.saveDirectory), String(id)], create);
-    if (!directory) { throw new UserError('本地 Work Item 目录不存在，请先导入或检查保存目录配置。'); }
+    if (!directory) { throw new UserError(t('本地 Work Item 目录不存在，请先导入或检查保存目录配置。')); }
     const lock = path.join(directory, LOCK_FILE);
     let handle;
     try { handle = await fs.open(lock, 'wx', 0o600); }
     catch (error) {
       if (code(error, 'EEXIST')) {
-        throw new UserError('此任务已有同步锁，可能正在其他窗口操作。若上次异常退出，请关闭相关窗口后按手动验收文档恢复；不要直接删除 pending。');
+        throw new UserError(t('此任务已有同步锁，可能正在其他窗口操作。若上次异常退出，请关闭相关窗口后按手动验收文档恢复；不要直接删除 pending。'));
       }
       throw error;
     }

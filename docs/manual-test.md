@@ -7,6 +7,7 @@
 1. F5 启动开发宿主，打开临时项目，命令面板可以搜索 8 个 Work Item 业务命令，以及 DevOps Connector: Configuration 入口。
 2. 在命令面板执行 DevOps Connector: Configuration，配置组织、项目、保存目录。检查该项目 .vscode/settings.json 没有凭据，也没有修改其他设置。
    - 分别测试 https://vffice.visualstudio.com/ 和带 /VFF070.Pro-Demnity 的项目地址；后者留空项目名称后应自动读取，最终保存的组织地址保持 visualstudio.com 域名且不含项目路径。
+   - 将语言切换为 English，检查配置页、命令面板、PAT 输入、校验提示、导入和同步报告。切回简体中文后复查。切换时应保留未保存的连接输入，重启后应恢复所选语言。
 3. 设置 PAT，重启开发宿主后仍能导入；移除 PAT 后，有环境变量时应显示该来源，无环境变量时导入应提示设置凭据。
 4. 输入有效 ID，核对 Markdown 与远端标题、描述、验收标准、修订号、来源链接。
 5. 输入同一任务的完整链接，验证已有文件不覆盖，design.md 和 notes.md 内容不变。

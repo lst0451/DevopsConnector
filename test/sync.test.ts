@@ -1,3 +1,4 @@
+import { withLanguage } from '../src/i18n';
 import { test, TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
@@ -731,3 +732,25 @@ test('sync upgrades an existing tracked item without Comments section at unchang
   assert.ok(upgraded.includes('## Comments'));
   assert.ok(upgraded.includes('Legacy comment sync'));
 });
+
+for (const original of ['en', 'zh-CN'] as const) {
+  test('tracks an existing ' + original + ' export after switching languages', async t => {
+    const s = await setup(t);
+    const next = original === 'en' ? 'zh-CN' : 'en';
+    const document = withLanguage(original, () => renderWorkItem(fixture(), connection, now()));
+    await fs.mkdir(s.directory, { recursive: true });
+    await fs.writeFile(s.file, document);
+    await withLanguage(next, async () => {
+      await s.service.trackExisting(42, 'test', guard);
+      const plan = await s.service.check(42, 'test', clean);
+      assert.equal(await fs.readFile(s.file, 'utf8'), document);
+      assert.equal(plan.changed, true);
+      await s.service.apply(plan, guard);
+      const updated = await fs.readFile(s.file, 'utf8');
+      assert.match(updated, next === 'en' ? /managed by DevOps Connector/ : /由 DevOps Connector 管理/);
+      assert.match(updated, /测试任务/);
+      assert.match(updated, /需求版本 1/);
+      assert.equal((await s.service.check(42, 'test', clean)).changed, false);
+    });
+  });
+}

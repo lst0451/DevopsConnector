@@ -1,3 +1,4 @@
+import { localizeStoredError, t, withLanguage } from './i18n';
 import { AzureDevOpsClient, buildLocalImagePath, collectWorkItemIdentities } from './azureDevOpsClient';
 import { CURRENT_RENDERER_VERSION, extractImageUrls, referencedLocalImages, renderWorkItem } from './markdown';
 import { SyncRepository } from './syncRepository';
@@ -9,7 +10,7 @@ type Client = Pick<AzureDevOpsClient, 'getWorkItem' | 'getWorkItemRevision'> &
 export interface TrackedItem { id: number; title: string; workItemState?: string; status: SyncStatus; revision?: number; rendererVersion?: number; checkedAt?: string; detail: string }
 export class ExistingFileMismatch extends UserError {
   constructor(readonly local: string, readonly expected: string) {
-    super('本地文件与对应的历史修订不一致，可能有本地修改。未建立跟踪；请先保留笔记并核对差异。');
+    super(t('本地文件与对应的历史修订不一致，可能有本地修改。未建立跟踪；请先保留笔记并核对差异。'));
   }
 }
 function title(item: WorkItem): string {
@@ -17,7 +18,7 @@ function title(item: WorkItem): string {
   return typeof value === 'string' ? value : '';
 }
 function cancelled(signal?: AbortSignal): void {
-  if (signal?.aborted) { throw new UserError('已取消操作。'); }
+  if (signal?.aborted) { throw new UserError(t('已取消操作。')); }
 }
 function makeState(item: WorkItem, connection: Connection, now: string, imagePaths?: ReadonlyMap<string, string>): SyncState {
   const baseline = renderWorkItem(item, connection, new Date(now), CURRENT_RENDERER_VERSION, imagePaths);
@@ -62,7 +63,7 @@ export class SyncService {
   async import(id: number, token: string, guard: () => void, signal?: AbortSignal): Promise<void> {
     await this.repository.withItem(id, true, async (local) => {
       if (await local.state() || await local.readDocument() !== undefined) {
-        throw new UserError('本地文件或跟踪记录已存在。旧文件请用 Track Existing Work Item；已跟踪项请用 Sync Work Item。');
+        throw new UserError(t('本地文件或跟踪记录已存在。旧文件请用 Track Existing Work Item；已跟踪项请用 Sync Work Item。'));
       }
       guard(); cancelled(signal);
       const rawItem = await this.client.getWorkItem(this.connection, id, token, signal);
@@ -77,18 +78,18 @@ export class SyncService {
 
   async trackExisting(id: number, token: string, guard: () => void, signal?: AbortSignal): Promise<void> {
     await this.repository.withItem(id, false, async (local) => {
-      if (await local.state()) { throw new UserError('该文件已在跟踪列表中，请使用 Sync Work Item。'); }
+      if (await local.state()) { throw new UserError(t('该文件已在跟踪列表中，请使用 Sync Work Item。')); }
       const document = await local.readDocument();
-      if (document === undefined) { throw new UserError('本地 workitem.md 不存在，请先导入。'); }
+      if (document === undefined) { throw new UserError(t('本地 workitem.md 不存在，请先导入。')); }
       guard(); cancelled(signal);
       const existing = readExistingExport(document, id, this.connection);
       const revision = await this.client.getWorkItemRevision(this.connection, id, existing.revision, token, signal);
       cancelled(signal);
-      const expected = renderWorkItem(revision, existing.connection, existing.importedAt, existing.rendererVersion);
+      const expected = withLanguage(existing.language, () => renderWorkItem(revision, existing.connection, existing.importedAt, existing.rendererVersion));
       if (document.replace(/\r\n/g, '\n') !== expected.replace(/\r\n/g, '\n')) {
         throw new ExistingFileMismatch(document, expected);
       }
-      if (await local.readDocument() !== document) { throw new UserError('校验期间本地文件发生变化，未建立跟踪。'); }
+      if (await local.readDocument() !== document) { throw new UserError(t('校验期间本地文件发生变化，未建立跟踪。')); }
       guard();
       await local.writeState({
         schema: 1, id, connection: existing.connection, title: title(revision), revision: revision.rev,
@@ -101,7 +102,7 @@ export class SyncService {
   async inspect(id: number): Promise<{ state: SyncState; local: string | undefined }> {
     return this.repository.withItem(id, false, async (item) => {
       const state = await item.state();
-      if (!state) { throw new UserError('该文件尚未跟踪，请先运行 Track Existing Work Item。'); }
+      if (!state) { throw new UserError(t('该文件尚未跟踪，请先运行 Track Existing Work Item。')); }
       assertSource(state, this.connection);
       return { state, local: await item.readDocument() };
     });
@@ -110,7 +111,7 @@ export class SyncService {
   async check(id: number, token: string, isDirty: () => boolean, signal?: AbortSignal): Promise<SyncPlan> {
     return this.repository.withItem(id, false, async (local) => {
       const state = await local.state();
-      if (!state) { throw new UserError('该任务尚未跟踪，请先接入现有文件。'); }
+      if (!state) { throw new UserError(t('该任务尚未跟踪，请先接入现有文件。')); }
       assertSource(state, this.connection);
       const attemptedAt = this.now().toISOString();
       let item: WorkItem;
@@ -123,14 +124,14 @@ export class SyncService {
         cancelled(signal);
         item = await this.client.getWorkItem(this.connection, id, token, signal);
         cancelled(signal);
-        if (item.rev < state.revision) { throw new UserError('远端修订低于本地基线，已停止更新。'); }
+        if (item.rev < state.revision) { throw new UserError(t('远端修订低于本地基线，已停止更新。')); }
         revisionChanged = item.rev !== state.revision;
         item = await this.attachComments(item, token, signal);
         cancelled(signal);
         const imageUrls = extractImageUrls(item, this.connection, CURRENT_RENDERER_VERSION);
         const existingRefs = referencedLocalImages(state.baseline);
         const missingLocalImages = imageUrls.length > 0 && Boolean(this.client.downloadImage) &&
-          (state.baseline.includes('（远端图片）') || existingRefs.length < imageUrls.length || !(await local.hasFiles(existingRefs)));
+          ((state.baseline.includes('（远端图片）') || state.baseline.includes(t('（远端图片）', 'en'))) || existingRefs.length < imageUrls.length || !(await local.hasFiles(existingRefs)));
         imagesChanged = missingLocalImages;
         const tentativeImagePaths = imageUrls.length > 0 && existingRefs.length === imageUrls.length ?
           new Map(imageUrls.map((url, idx) => [url, existingRefs[idx]!])) : undefined;
@@ -150,7 +151,7 @@ export class SyncService {
       } catch (error) {
         if (!signal?.aborted) {
           await local.writeState({ ...state, attemptedAt, status: 'error',
-            error: error instanceof UserError ? error.message : '检查远端失败，请稍后重试。' });
+            error: error instanceof UserError ? error.message : t('检查远端失败，请稍后重试。') });
         }
         throw error;
       }
@@ -171,20 +172,20 @@ export class SyncService {
   }
 
   async apply(plan: SyncPlan, guard: () => void): Promise<void> {
-    if (plan.conflict) { throw new UserError('存在本地修改，不能覆盖；请先核对差异。'); }
+    if (plan.conflict) { throw new UserError(t('存在本地修改，不能覆盖；请先核对差异。')); }
     await this.repository.withItem(plan.id, false, async (local) => {
       const state = await local.state();
-      if (!state) { throw new UserError('跟踪记录已被移除，请重新检查。'); }
+      if (!state) { throw new UserError(t('跟踪记录已被移除，请重新检查。')); }
       assertSource(state, this.connection);
       assertSource(plan.next, this.connection);
       if (state.hash !== plan.expectedHash || state.revision !== plan.previous.revision ||
           state.rendererVersion !== plan.previous.rendererVersion) {
-        throw new UserError('其他窗口已更新此任务，请重新检查。');
+        throw new UserError(t('其他窗口已更新此任务，请重新检查。'));
       }
       const document = await local.readDocument();
       guard();
       if (document === undefined || digest(document) !== plan.expectedHash) {
-        throw new UserError('预览后本地文件发生变化，已停止覆盖。');
+        throw new UserError(t('预览后本地文件发生变化，已停止覆盖。'));
       }
       if (!plan.changed) { return; }
       await local.commit(plan.next, plan.expectedHash, guard, plan.images);
@@ -202,12 +203,12 @@ export class SyncService {
           id, title: state.title, workItemState: readWorkItemState(state.baseline),
           revision: state.revision, rendererVersion: state.rendererVersion, checkedAt: state.checkedAt,
           status: conflict ? 'conflict' : state.status === 'error' ? 'error' : templateChanged ? 'updateAvailable' : state.status,
-          detail: conflict ? '本地文件已修改或缺失' : [state.error,
-            templateChanged ? '导出模板需升级至 ' + CURRENT_RENDERER_VERSION + '，请执行同步补全内容' : undefined].filter(Boolean).join('；'),
+          detail: conflict ? t('本地文件已修改或缺失') : [state.error && localizeStoredError(state.error),
+            templateChanged ? t('导出模板需升级至 ') + CURRENT_RENDERER_VERSION + t('，请执行同步补全内容') : undefined].filter(Boolean).join(t('；')),
         });
       } catch (error) {
         result.push({ id, title: '', status: 'error',
-          detail: error instanceof UserError ? error.message : '无法读取跟踪记录。' });
+          detail: error instanceof UserError ? error.message : t('无法读取跟踪记录。') });
       }
     }
     return result;
@@ -215,7 +216,7 @@ export class SyncService {
   async untrack(id: number): Promise<void> {
     await this.repository.withItem(id, false, async (item) => {
       const state = await item.state();
-      if (!state) { throw new UserError('未找到跟踪记录。'); }
+      if (!state) { throw new UserError(t('未找到跟踪记录。')); }
       assertSource(state, this.connection);
       await item.untrack();
     });

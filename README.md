@@ -24,7 +24,8 @@ npm run compile
 
 ## 首次使用
 
-1. 按 **Ctrl+Shift+P**，输入并选择 **DevOps Connector: Configuration**。多根工作区会先提示选择文件夹。
+1. 按 **Ctrl+Shift+P**，输入并选择 **DevOps Connector: 配置 (Configuration)**（英文界面为 **DevOps Connector: Configuration**）。多根工作区会先提示选择文件夹。
+   在 **语言 / Language** 中可选择简体中文或 English。选择立即生效，并作为用户偏好跨项目保存。命令名称、操作提示和新导出文档的插件说明随语言切换。Azure DevOps 标题、字段值、正文和评论保留原文。已有文档在确认同步后更新。
 2. 填写组织或项目地址、项目名称和相对保存目录，然后点击 **保存连接**。如果粘贴完整项目地址，可以留空项目名称。默认目录为 `docs/workitems`。
 3. 在同一页查看 PAT 来源。点击 **设置或替换 PAT**，在密码框输入具有 Work Items (Read) 权限的 PAT。凭据按工作区文件夹和组织保存在 VS Code SecretStorage。点击 **移除已存 PAT** 后，插件会使用非空的环境变量 `AZURE_DEVOPS_PAT`（如有）。
 4. 打开命令面板，运行 **DevOps Connector: Import Work Item**，输入 ID 或完整链接。首次成功导入即可确认读取权限。

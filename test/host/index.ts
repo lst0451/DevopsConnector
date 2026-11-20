@@ -14,8 +14,10 @@ export async function run(): Promise<void> {
     (item: { command: string }) => item.command === 'devopsConnector.configure');
   assert.equal(configuration?.title, 'Configuration');
   assert.equal(configuration.category, 'DevOps Connector');
-  assert.ok(!menus.commandPalette?.some((item: { command: string }) => item.command === configuration.command));
-  assert.equal(declared.length, 9);
+  for (const condition of ['== en', '!= en']) {
+    assert.equal(menus.commandPalette.filter((item: { when: string }) =>
+      item.when === 'config.devopsConnector.language ' + condition).length, 9);
+  }
   assert.ok(menus['view/title'].some((item: { command: string }) => item.command === configuration.command));
   await vscode.commands.executeCommand('devopsConnector.configure');
   const pageIsOpen = () => vscode.window.tabGroups.all.some(group => group.tabs.some(tab =>
@@ -26,6 +28,14 @@ export async function run(): Promise<void> {
   const document = await vscode.workspace.openTextDocument(
     vscode.Uri.parse('devops-connector-snapshot:/smoke/missing.md'));
   assert.ok(document.getText().includes('请重新执行比较命令'));
-  assert.equal(vscode.workspace.getConfiguration('devopsConnector').get('saveDirectory'), 'docs/workitems');
+  const settings = vscode.workspace.getConfiguration('devopsConnector');
+  assert.equal(settings.get('saveDirectory'), 'docs/workitems');
+  try {
+    await settings.update('language', 'en', vscode.ConfigurationTarget.Global);
+    const english = await vscode.workspace.openTextDocument(vscode.Uri.parse('devops-connector-snapshot:/smoke/en.md'));
+    assert.match(english.getText(), /Run the comparison command again/);
+  } finally {
+    await settings.update('language', undefined, vscode.ConfigurationTarget.Global);
+  }
   console.log('HOST SMOKE PASSED: extension activation, configuration page and 8 business commands, snapshot provider, configuration defaults.');
 }

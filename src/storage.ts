@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -24,7 +25,7 @@ export async function saveNewWorkItem(root: string, directory: string, id: numbe
     catch (error) { if (!hasCode(error, 'EEXIST')) { throw error; } }
     const stat = await fs.lstat(current);
     if (stat.isSymbolicLink() || !stat.isDirectory()) {
-      throw new UserError('保存路径包含符号链接、目录联接或非目录项，已停止导入。');
+      throw new UserError(t('保存路径包含符号链接、目录联接或非目录项，已停止导入。'));
     }
   }
   const target = path.join(current, 'workitem.md');
@@ -42,10 +43,10 @@ export async function saveNewWorkItem(root: string, directory: string, id: numbe
     await fs.link(temporary, target);
   } catch (error) {
     if (hasCode(error, 'EEXIST')) {
-      throw new UserError('本地 workitem.md 已存在，未覆盖。更新同步将在下一阶段提供。');
+      throw new UserError(t('本地 workitem.md 已存在，未覆盖。更新同步将在下一阶段提供。'));
     }
     if (error instanceof UserError) { throw error; }
-    throw new UserError('保存失败。请检查目录权限及文件系统是否支持硬链接；已有文件未被覆盖。');
+    throw new UserError(t('保存失败。请检查目录权限及文件系统是否支持硬链接；已有文件未被覆盖。'));
   } finally {
     if (created) { await fs.unlink(temporary).catch(() => undefined); }
   }

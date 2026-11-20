@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
 import { Connection, WorkItem } from './types';
@@ -78,7 +79,7 @@ function sanitizeMarkdown(
 ): string {
   const withImages = markdown.replace(/!\[((?:\\.|[^\]\\])*)\]\(((?:\([^()\s]*\)|[^()\s])+)\)/g, (_match, rawAlt: string, rawUrl: string) => {
     const href = safeLink(rawUrl, base);
-    const label = rawAlt.trim() || '图片';
+    const label = rawAlt.trim() || t('图片');
     if (href && collectedUrls && !collectedUrls.includes(href)) {
       collectedUrls.push(href);
     }
@@ -86,7 +87,7 @@ function sanitizeMarkdown(
     if (localPath) {
       return '![' + label + '](' + localPath + ')';
     }
-    return href ? '[' + label + '（远端图片）](' + href + ')' : '[图片未导入]';
+    return href ? '[' + label + t('（远端图片）](') + href + ')' : t('[图片未导入]');
   });
   return withImages.replace(/(?<!!)\[((?:\\.|[^\]\\])+)\]\(((?:\([^()\s]*\)|[^()\s])+)\)/g, (_match, label: string, rawUrl: string) => {
     const href = safeLink(rawUrl, base);
@@ -144,7 +145,7 @@ export function htmlToMarkdown(html: string, base: string, imagePaths?: Readonly
         ancestor = ancestor.parentNode;
       }
       const href = safeLink(node.getAttribute('src') ?? '', base);
-      const label = inline(node.getAttribute('alt')) || '图片';
+      const label = inline(node.getAttribute('alt')) || t('图片');
       if (href && collectedUrls && !collectedUrls.includes(href)) {
         collectedUrls.push(href);
       }
@@ -152,7 +153,7 @@ export function htmlToMarkdown(html: string, base: string, imagePaths?: Readonly
       if (localPath) {
         return '![' + label + '](' + localPath + ')';
       }
-      return href ? '[' + label + '（远端图片）](' + href + ')' : '[图片未导入]';
+      return href ? '[' + label + t('（远端图片）](') + href + ')' : t('[图片未导入]');
     },
   });
   return converter.turndown(html).trim();
@@ -203,11 +204,11 @@ export function renderWorkItem(item: WorkItem, connection: Connection, importedA
     assigned.displayName : assigned;
   const source = workItemUrl(connection, item.id);
   const section = (name: string, field: string): string =>
-    '## ' + name + '\n\n' + (htmlToMarkdown(text(fields[field]), source, imagePaths) || '（未提供）');
+    '## ' + name + '\n\n' + (htmlToMarkdown(text(fields[field]), source, imagePaths) || t('（未提供）'));
   const commentsSection = (): string[] => {
     if (rendererVersion < 3 || item.comments === undefined) { return []; }
     if (item.comments.length === 0) {
-      return ['## Comments\n\n（未提供）'];
+      return [t('## Comments\n\n（未提供）')];
     }
     const rendered = item.comments.map((comment, idx) => {
       const author = inline(comment.createdBy) || 'Unknown';
@@ -215,7 +216,7 @@ export function renderWorkItem(item: WorkItem, connection: Connection, importedA
       const edited = comment.modifiedDate && comment.modifiedDate !== comment.createdDate ?
         ', edited ' + inline(comment.modifiedDate) : '';
       const timePart = created ? ' (' + created + edited + ')' : '';
-      const body = htmlToMarkdown(text(comment.text), source, imagePaths) || '（未提供）';
+      const body = htmlToMarkdown(text(comment.text), source, imagePaths) || t('（未提供）');
       return '### Comment ' + (idx + 1) + ' — ' + author + timePart + '\n\n' + body;
     });
     return ['## Comments\n\n' + rendered.join('\n\n')];
@@ -223,8 +224,8 @@ export function renderWorkItem(item: WorkItem, connection: Connection, importedA
   return [
     '# ' + item.id + ' — ' + inline(fields['System.Title']),
     rendererVersion === 1 ?
-      '> Azure DevOps 需求副本。请将本地设计与笔记写入独立文件；此版本仅支持首次导入。' :
-      '> Azure DevOps 需求副本，由 DevOps Connector 管理。请将本地设计与笔记写入独立文件。',
+      t('> Azure DevOps 需求副本。请将本地设计与笔记写入独立文件；此版本仅支持首次导入。') :
+      t('> Azure DevOps 需求副本，由 DevOps Connector 管理。请将本地设计与笔记写入独立文件。'),
     '- ID: ' + item.id,
     '- Revision: ' + item.rev,
     ...(rendererVersion >= 3 ? ['- Template Version: ' + rendererVersion] : []),
@@ -248,10 +249,10 @@ export function renderWorkItem(item: WorkItem, connection: Connection, importedA
     ...commentsSection(),
     item.comments !== undefined ?
       (imagePaths && imagePaths.size > 0 ?
-        '> 评论与图片已同步到本地；附件和修订历史未导入。' :
-        '> 评论已同步到本地；附件和修订历史未导入；图片仅保留链接。') :
+        t('> 评论与图片已同步到本地；附件和修订历史未导入。') :
+        t('> 评论已同步到本地；附件和修订历史未导入；图片仅保留链接。')) :
       (imagePaths && imagePaths.size > 0 ?
-        '> 评论、附件和历史未导入；图片已下载到本地。' :
-        '> 评论、附件和历史未导入；图片仅保留链接。'),
+        t('> 评论、附件和历史未导入；图片已下载到本地。') :
+        t('> 评论、附件和历史未导入；图片仅保留链接。')),
   ].join('\n\n') + '\n';
 }
