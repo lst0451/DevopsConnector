@@ -120,7 +120,7 @@ export function envToken(env: NodeJS.ProcessEnv = process.env): string | undefin
 export function resolveToken(storedToken: string | undefined, env: NodeJS.ProcessEnv = process.env): string {
   const value = storedToken?.trim() || envToken(env);
   if (!value) {
-    throw new UserError('请先运行 DevOps Connector: Set Personal Access Token，或设置环境变量 AZURE_DEVOPS_PAT。');
+    throw new UserError('请先运行 DevOps Connector: Configuration 设置 PAT，或设置环境变量 AZURE_DEVOPS_PAT。');
   }
   return value;
 }

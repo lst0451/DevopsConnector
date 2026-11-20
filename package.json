@@ -16,9 +16,7 @@
   },
   "contributes": {
     "commands": [
-      { "command": "devopsConnector.configure", "title": "Configure Connection", "category": "DevOps Connector" },
-      { "command": "devopsConnector.setToken", "title": "Set Personal Access Token", "category": "DevOps Connector" },
-      { "command": "devopsConnector.clearToken", "title": "Remove Personal Access Token", "category": "DevOps Connector" },
+      { "command": "devopsConnector.configure", "title": "Configuration", "category": "DevOps Connector", "icon": "$(gear)" },
       { "command": "devopsConnector.importWorkItem", "title": "Import Work Item", "category": "DevOps Connector" },
       { "command": "devopsConnector.trackExistingWorkItem", "title": "Track Existing Work Item", "category": "DevOps Connector" },
       { "command": "devopsConnector.showTrackedWorkItems", "title": "Show Tracked Work Items", "category": "DevOps Connector" },
@@ -28,6 +26,9 @@
       { "command": "devopsConnector.compareBaseline", "title": "Compare with Last Synced Version", "category": "DevOps Connector" },
       { "command": "devopsConnector.stopTracking", "title": "Stop Tracking Work Item", "category": "DevOps Connector" }
     ],
+    "menus": {
+      "view/title": [{ "command": "devopsConnector.configure", "when": "view == workbench.explorer.fileView && isWorkspaceTrusted", "group": "navigation@99" }]
+    },
     "configuration": {
       "title": "DevOps Connector",
       "properties": {

@@ -33,7 +33,7 @@ const consume = (chunk) => {
   output = (output + chunk.toString()).slice(-64 * 1024);
   if (!passed && output.includes('HOST SMOKE PASSED:')) {
     passed = true;
-    console.log('HOST SMOKE PASSED: activation, 11 commands, snapshot provider, configuration.');
+    console.log('HOST SMOKE PASSED: activation, configuration page and 8 business commands, snapshot provider, configuration.');
     // Some desktop builds leave the UI process alive after the test extension host exits.
     shutdown = setTimeout(() => {
       stoppedAfterPass = true;

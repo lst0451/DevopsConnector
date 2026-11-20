@@ -1,0 +1,118 @@
+import { randomBytes } from 'node:crypto';
+import * as vscode from 'vscode';
+import { readSettings, tokenKey } from './configuration';
+import { UserError } from './types';
+import { envToken, parseOrganizationInput, validateDirectory, validateProject } from './validation';
+
+const panels = new Map<string, vscode.WebviewPanel>();
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+export async function openConfiguration(folder: vscode.WorkspaceFolder, secrets: vscode.SecretStorage): Promise<void> {
+  const id = folder.uri.toString();
+  const existing = panels.get(id);
+  if (existing) { existing.reveal(); return; }
+
+  const panel = vscode.window.createWebviewPanel('devopsConnector.configuration',
+    'DevOps Connector · ' + folder.name, vscode.ViewColumn.Active,
+    { enableScripts: true, localResourceRoots: [], retainContextWhenHidden: true });
+  panels.set(id, panel);
+  panel.onDidDispose(() => panels.delete(id));
+  const config = () => vscode.workspace.getConfiguration('devopsConnector', folder.uri);
+  let displayedKey: string | undefined;
+  let busy = false;
+
+  async function render(message = ''): Promise<void> {
+    const settings = config();
+    let stored = false;
+    displayedKey = undefined;
+    try {
+      displayedKey = tokenKey(folder, readSettings(folder));
+      stored = Boolean((await secrets.get(displayedKey))?.trim());
+    } catch (error) {
+      if (!(error instanceof UserError)) { throw error; }
+    }
+    const source = !displayedKey ? '请先保存有效的连接配置。' : stored ? '正在使用此工作区与组织的已存 PAT。' :
+      envToken() ? '正在使用环境变量 AZURE_DEVOPS_PAT。' : '尚未设置 PAT。';
+    const nonce = randomBytes(18).toString('base64');
+    panel.webview.html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; form-action 'none'">
+<style nonce="${nonce}">
+body { max-width: 42rem; padding: 1.5rem; color: var(--vscode-foreground); font-family: var(--vscode-font-family); }
+h1 { font-size: 1.6rem; } h2 { margin-top: 2rem; font-size: 1.2rem; }
+label { display: block; margin: 1rem 0 .3rem; }
+input { width: 100%; box-sizing: border-box; background: var(--vscode-input-background); color: var(--vscode-input-foreground); padding: .5rem; border: 1px solid var(--vscode-input-border, transparent); }
+button { margin: .8rem .4rem 0 0; padding: .45rem .85rem; border: 1px solid transparent; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; }
+button:disabled { opacity: .55; cursor: default; } :focus-visible { outline: 1px solid var(--vscode-focusBorder); }
+</style></head><body><h1>DevOps Connector 配置</h1><p>工作区 · ${escapeHtml(folder.uri.fsPath)}</p>
+<form id="connection"><h2>Azure DevOps 连接</h2>
+<label for="organization">组织或项目地址</label><input id="organization" type="url" required placeholder="https://dev.azure.com/my-org" value="${escapeHtml(settings.get('organizationUrl', ''))}">
+<label for="project">项目名称</label><input id="project" placeholder="可从项目地址读取" value="${escapeHtml(settings.get('project', ''))}">
+<label for="directory">工作区内保存目录</label><input id="directory" required value="${escapeHtml(settings.get('saveDirectory', 'docs/workitems'))}">
+<button>保存连接</button></form>
+<h2>Personal Access Token</h2><p id="source">${source}</p>
+<button id="set" ${displayedKey ? '' : 'disabled'}>设置或替换 PAT</button>
+<button id="remove" ${stored ? '' : 'disabled'}>移除已存 PAT</button>
+<p role="status" id="feedback">${escapeHtml(message)}</p>
+<script nonce="${nonce}">
+const api = acquireVsCodeApi(), byId = id => document.getElementById(id);
+byId('connection').oninput = () => {
+  byId('set').disabled = byId('remove').disabled = true;
+  byId('source').textContent = '请先保存连接，再管理该组织的 PAT。';
+};
+byId('connection').onsubmit = e => {
+  e.preventDefault();
+  api.postMessage({action:'save', organization:byId('organization').value, project:byId('project').value, directory:byId('directory').value});
+};
+for (const action of ['set','remove']) byId(action).onclick = () => api.postMessage({action});
+window.addEventListener('message', e => { byId('feedback').textContent = e.data.message; });
+</script></body></html>`;
+  }
+
+  panel.webview.onDidReceiveMessage(async data => {
+    if (busy || !data || !['save', 'set', 'remove'].includes(data.action)) { return; }
+    busy = true;
+    try {
+      if (!vscode.workspace.isTrusted || !vscode.workspace.workspaceFolders?.some(f => f.uri.toString() === id)) {
+        throw new UserError('请在受信任的工作区文件夹中重新打开配置页。');
+      }
+      if (data.action === 'save') {
+        if (![data.organization, data.project, data.directory].every(v => typeof v === 'string')) { return; }
+        const parsed = parseOrganizationInput(data.organization);
+        const project = validateProject(data.project.trim() || parsed.project || '');
+        if (parsed.project && parsed.project.toLowerCase() !== project.toLowerCase()) {
+          throw new UserError('项目名称与地址中的项目不同。请核对名称，或清空项目名称以使用地址中的项目。');
+        }
+        const directory = validateDirectory(data.directory).join('/');
+        const settings = config();
+        const target = vscode.ConfigurationTarget.WorkspaceFolder;
+        await settings.update('organizationUrl', parsed.organizationUrl, target);
+        await settings.update('project', project, target);
+        await settings.update('saveDirectory', directory, target);
+        await render('连接已保存。导入 Work Item 时将验证访问权限。');
+        return;
+      }
+      const connection = readSettings(folder);
+      const key = tokenKey(folder, connection);
+      if (key !== displayedKey) { await render('组织配置已更改，请核对后继续。'); return; }
+      if (data.action === 'set') {
+        const pat = await vscode.window.showInputBox({
+          title: '设置 PAT · ' + connection.organizationUrl, password: true, ignoreFocusOut: true,
+          prompt: '使用具有 Work Items (Read) 权限的 PAT',
+          validateInput: value => value.trim() ? undefined : 'PAT 不能为空。',
+        });
+        if (pat === undefined) { return; }
+        await secrets.store(key, pat.trim());
+        await render('PAT 已保存到 VS Code SecretStorage。');
+      } else {
+        await secrets.delete(key);
+        await render('已移除此组织的已存 PAT。');
+      }
+    } catch (error) {
+      await panel.webview.postMessage({ message: error instanceof UserError ? error.message : '操作失败，请检查工作区权限后重试。' });
+    } finally { busy = false; }
+  });
+  try { await render(); } catch (error) { panel.dispose(); throw error; }
+}

@@ -4,10 +4,10 @@
 
 准备：一个临时项目文件夹、可读取的 Work Item、仅含 Work Items (Read) 的测试 PAT。不在仓库内记录 PAT。
 
-1. F5 启动开发宿主，打开临时项目，命令面板可以搜索 11 个 DevOps Connector 命令。
-2. 配置组织、项目、保存目录。检查该项目 .vscode/settings.json 没有凭据，也没有修改其他设置。
-   - 分别测试 https://vffice.visualstudio.com/ 和带 /VFF070.Pro-Demnity 的项目地址；后者应预填项目名称，最终保存的组织地址保持 visualstudio.com 域名且不含项目路径。
-3. 设置 PAT，重启开发宿主后仍能导入；移除 PAT 后导入提示设置凭据。
+1. F5 启动开发宿主，打开临时项目，命令面板可以搜索 8 个 Work Item 业务命令，以及 DevOps Connector: Configuration 入口。
+2. 在命令面板执行 DevOps Connector: Configuration，配置组织、项目、保存目录。检查该项目 .vscode/settings.json 没有凭据，也没有修改其他设置。
+   - 分别测试 https://vffice.visualstudio.com/ 和带 /VFF070.Pro-Demnity 的项目地址；后者留空项目名称后应自动读取，最终保存的组织地址保持 visualstudio.com 域名且不含项目路径。
+3. 设置 PAT，重启开发宿主后仍能导入；移除 PAT 后，有环境变量时应显示该来源，无环境变量时导入应提示设置凭据。
 4. 输入有效 ID，核对 Markdown 与远端标题、描述、验收标准、修订号、来源链接。
 5. 输入同一任务的完整链接，验证已有文件不覆盖，design.md 和 notes.md 内容不变。
 6. 导入另一个含中文、链接、表格、代码、图片的任务，核对正文可读且图片仅为链接。

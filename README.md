@@ -24,26 +24,12 @@ npm run compile
 
 ## 首次使用
 
-在开发宿主的命令面板中，依次执行：
+1. 按 **Ctrl+Shift+P**，输入并选择 **DevOps Connector: Configuration**。多根工作区会先提示选择文件夹。
+2. 填写组织或项目地址、项目名称和相对保存目录，然后点击 **保存连接**。如果粘贴完整项目地址，可以留空项目名称。默认目录为 `docs/workitems`。
+3. 在同一页查看 PAT 来源。点击 **设置或替换 PAT**，在密码框输入具有 Work Items (Read) 权限的 PAT。凭据按工作区文件夹和组织保存在 VS Code SecretStorage。点击 **移除已存 PAT** 后，插件会使用非空的环境变量 `AZURE_DEVOPS_PAT`（如有）。
+4. 打开命令面板，运行 **DevOps Connector: Import Work Item**，输入 ID 或完整链接。首次成功导入即可确认读取权限。
 
-1. **DevOps Connector: Configure Connection**
-   - 组织地址，例如 https://vffice.visualstudio.com/ 或 https://dev.azure.com/my-org。
-   - 也可粘贴项目地址，例如 https://vffice.visualstudio.com/VFF070.Pro-Demnity；下一步会预填项目名称供确认。
-   - Azure DevOps 项目名称，支持空格和中文；此版本不接受项目 GUID 代替名称。
-   - 项目内相对保存目录，默认 docs/workitems。
-2. **DevOps Connector: Set Personal Access Token**
-   - 如果环境变量 `AZURE_DEVOPS_PAT` 已设置（非空），插件会默认使用该 token，可跳过此步（如需为当前工作区和组织单独覆盖，仍可通过此命令设置）。
-   - 在密码输入框中输入 PAT，建议只授予 Work Items (Read)。
-   - 不要将 PAT 粘贴进 settings.json、源代码、终端命令或 Git。
-3. **DevOps Connector: Import Work Item**
-   - 输入 ID，例如 21835，或者完整 Work Item 链接。
-   - 导入完成后自动打开本地文件，并建立同步跟踪。已有文件不会被重复导入覆盖。
-
-配置命令只保存配置，不声称连接已验证。首次成功导入才验证当前凭据对该 Work Item 的读取权限。
-
-PAT 按“工作区文件夹 + 组织”保存在 VS Code SecretStorage。可通过 Remove Personal Access Token 删除当前配置对应的凭据；切换组织不会自动删除旧组织凭据，需要切回旧组织再删除。
-
-多根工作区每次操作都明确选择目标文件夹。配置保存在该文件夹的 VS Code 设置中，凭据不随配置共享。
+已有连接和凭据可直接使用。切换组织后，配置页管理新组织的 PAT；要管理原组织的 PAT，请先切回并保存。
 
 ## 已导出文件的升级与同步
 

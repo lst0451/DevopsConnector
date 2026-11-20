@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import { AzureDevOpsClient } from './azureDevOpsClient';
-import { chooseFolder, configureConnection, readSettings, tokenKey } from './configuration';
+import { chooseFolder } from './configuration';
 import { registerSyncCommands } from './syncCommands';
 import { UserError } from './types';
-import { envToken } from './validation';
+import { openConfiguration } from './configurationPage';
 
 export function activate(context: vscode.ExtensionContext): void {
   const client = new AzureDevOpsClient();
@@ -20,31 +20,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   register('devopsConnector.configure', async () => {
     const folder = await chooseFolder();
-    if (folder) { await configureConnection(folder, context.secrets); }
-  });
-  register('devopsConnector.setToken', async () => {
-    const folder = await chooseFolder();
-    if (!folder) { return; }
-    const settings = readSettings(folder);
-    const token = await vscode.window.showInputBox({
-      title: 'DevOps Connector · Personal Access Token',
-      prompt: settings.organizationUrl + ' — 请使用仅含 Work Items (Read) 权限的 PAT',
-      password: true,
-      ignoreFocusOut: true,
-      validateInput: (value) => value.trim() ? undefined : 'PAT 不能为空。',
-    });
-    if (token === undefined) { return; }
-    await context.secrets.store(tokenKey(folder, settings), token.trim());
-    await vscode.window.showInformationMessage('PAT 已保存到 VS Code SecretStorage，未写入项目文件。');
-  });
-  register('devopsConnector.clearToken', async () => {
-    const folder = await chooseFolder();
-    if (!folder) { return; }
-    const settings = readSettings(folder);
-    await context.secrets.delete(tokenKey(folder, settings));
-    await vscode.window.showInformationMessage(envToken() ?
-      '当前文件夹与组织对应的 SecretStorage PAT 已移除；将继续默认使用环境变量 AZURE_DEVOPS_PAT。' :
-      '当前文件夹与组织对应的 PAT 已移除。');
+    if (folder) { await openConfiguration(folder, context.secrets); }
   });
   registerSyncCommands(context, client, register);
 }

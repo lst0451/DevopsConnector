@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { Connection, UserError } from './types';
-import { envToken, organizationIdentity, parseOrganizationInput, resolveToken, validateDirectory, validateProject } from './validation';
+import { organizationIdentity, parseOrganizationInput, resolveToken, validateDirectory, validateProject } from './validation';
 
 export async function chooseFolder(): Promise<vscode.WorkspaceFolder | undefined> {
   if (!vscode.workspace.isTrusted) { throw new UserError('请先信任当前工作区。'); }
@@ -16,11 +16,13 @@ export async function chooseFolder(): Promise<vscode.WorkspaceFolder | undefined
 
 export function readSettings(folder: vscode.WorkspaceFolder): Connection & { saveDirectory: string } {
   const config = vscode.workspace.getConfiguration('devopsConnector', folder.uri);
-  const parsed = parseOrganizationInput(config.get<string>('organizationUrl', ''));
+  const organization = config.get<string>('organizationUrl', '');
+  if (!organization.trim()) { throw new UserError('请先运行 DevOps Connector: Configuration，填写组织地址和项目。'); }
+  const parsed = parseOrganizationInput(organization);
   const organizationUrl = parsed.organizationUrl;
   const project = validateProject(config.get<string>('project', '').trim() || parsed.project || '');
   if (parsed.project && parsed.project.toLowerCase() !== project.toLowerCase()) {
-    throw new UserError('地址中的项目与 project 配置不一致，请重新运行 Configure Connection。');
+    throw new UserError('地址中的项目与 project 配置不一致，请运行 DevOps Connector: Configuration。');
   }
   const saveDirectory = config.get<string>('saveDirectory', 'docs/workitems');
   validateDirectory(saveDirectory);
@@ -34,52 +36,4 @@ export function tokenKey(folder: vscode.WorkspaceFolder, connection: Connection)
 
 export async function getToken(secrets: vscode.SecretStorage, folder: vscode.WorkspaceFolder, connection: Connection): Promise<string> {
   return resolveToken(await secrets.get(tokenKey(folder, connection)));
-}
-
-function validationMessage(check: (value: string) => unknown): (value: string) => string | undefined {
-  return (value) => {
-    try { check(value); return undefined; }
-    catch (error) { return error instanceof UserError ? error.message : '输入无效。'; }
-  };
-}
-
-export async function configureConnection(folder: vscode.WorkspaceFolder, secrets?: vscode.SecretStorage): Promise<void> {
-  const config = vscode.workspace.getConfiguration('devopsConnector', folder.uri);
-  const organization = await vscode.window.showInputBox({
-    title: 'DevOps Connector · 组织或项目地址',
-    prompt: '例如 https://vffice.visualstudio.com/，也可粘贴带项目名称的地址',
-    value: config.get<string>('organizationUrl', ''),
-    ignoreFocusOut: true,
-    validateInput: validationMessage(parseOrganizationInput),
-  });
-  if (organization === undefined) { return; }
-  const parsed = parseOrganizationInput(organization);
-  const project = await vscode.window.showInputBox({
-    title: 'DevOps Connector · 项目',
-    prompt: 'Azure DevOps 项目名称（不是项目 GUID）',
-    value: parsed.project ?? config.get<string>('project', ''),
-    ignoreFocusOut: true,
-    validateInput: validationMessage(validateProject),
-  });
-  if (project === undefined) { return; }
-  const directory = await vscode.window.showInputBox({
-    title: 'DevOps Connector · 保存目录',
-    prompt: '相对于当前项目根目录，例如 docs/workitems',
-    value: config.get<string>('saveDirectory', 'docs/workitems'),
-    ignoreFocusOut: true,
-    validateInput: validationMessage(validateDirectory),
-  });
-  if (directory === undefined) { return; }
-  const validatedProject = validateProject(project);
-  const target = vscode.ConfigurationTarget.WorkspaceFolder;
-  await config.update('organizationUrl', parsed.organizationUrl, target);
-  await config.update('project', validatedProject, target);
-  await config.update('saveDirectory', validateDirectory(directory).join('/'), target);
-  const hasPat = Boolean(envToken() || (await secrets?.get(tokenKey(folder, {
-    organizationUrl: parsed.organizationUrl,
-    project: validatedProject,
-  })))?.trim());
-  await vscode.window.showInformationMessage(hasPat ?
-    '连接配置已保存（尚未联网验证）。现在可以导入 Work Item。' :
-    '连接配置已保存（尚未联网验证）。请设置 PAT，然后导入 Work Item。');
 }
