@@ -34,6 +34,20 @@ npm run compile
 
 已有连接和凭据可直接使用。切换组织后，配置页管理新组织的 PAT；要管理原组织的 PAT，请先切回并保存。
 
+### 创建 Azure DevOps PAT
+
+1. 登录 Azure DevOps，点击右上角的 **User settings**（用户设置），选择 **Personal access tokens**。
+
+   ![从 User settings 打开 Personal access tokens](./docs/images/pat-user-settings.png)
+
+2. 点击 **New Token**，填写名称、组织与过期时间；在 **Scopes** 下选择 **Custom defined**，并勾选 **Work Items -> Read** 权限。
+
+   ![创建具备 Work Items Read 权限的 PAT](./docs/images/pat-create-scopes.png)
+
+3. 复制生成的 Token，在插件配置页点击 **设置或替换 PAT** 填入即可。如果希望通过环境变量提供（而非保存在 SecretStorage），也可在用户环境变量中配置 `AZURE_DEVOPS_PAT`（配置后需重启 VS Code 生效）。
+
+   ![在系统环境变量中配置 AZURE_DEVOPS_PAT](./docs/images/pat-env-variable.png)
+
 ## 已导出文件的升级与同步
 
 原 0.1.0 导出文件不能直接当作可信同步基线。保持原项目配置和保存目录不变，执行：

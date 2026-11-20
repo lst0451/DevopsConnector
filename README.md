@@ -27,6 +27,20 @@ Press **F5** in the extension project and select **Run DevOps Connector**. In th
 3. Check the PAT source on the same page. Choose **Set or replace PAT** and enter a token with **Work Items (Read)** permission in the password prompt. VS Code SecretStorage keeps it per workspace folder and organization. Removing the saved PAT lets the extension use `AZURE_DEVOPS_PAT` if that environment variable has a value. Existing connections and credentials carry over. To manage a previous organization's PAT, switch back to that organization and save the connection.
 4. Run **DevOps Connector: Import Work Item** and enter an ID or a full work item URL. A successful import confirms read access to that item.
 
+### Creating an Azure DevOps PAT
+
+1. Sign in to Azure DevOps, select **User settings** in the top-right corner, and open **Personal access tokens**.
+
+   ![Open Personal access tokens from User settings](./docs/images/pat-user-settings.png)
+
+2. Choose **New Token**, set a name, organization, and expiration, select **Custom defined** under **Scopes**, and check **Work Items -> Read**.
+
+   ![Create a new personal access token with Work Items Read scope](./docs/images/pat-create-scopes.png)
+
+3. Copy the generated token and enter it via **Set or replace PAT** in the extension configuration page. Alternatively, if you prefer using an environment variable instead of SecretStorage, set `AZURE_DEVOPS_PAT` in your user environment variables (and restart VS Code).
+
+   ![Set AZURE_DEVOPS_PAT in Windows Environment Variables](./docs/images/pat-env-variable.png)
+
 ## Tracking and syncing existing exports
 
 To start tracking a file exported by version 0.1.0, keep its original project configuration and save directory.
