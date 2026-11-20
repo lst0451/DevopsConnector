@@ -1,16 +1,16 @@
 # DevOps Connector
 
-将 Azure DevOps Work Item 导入当前 VS Code 项目，作为本地 Markdown 需求副本。
+English | <a href="./README.zh-CN.md">简体中文</a>
 
-## 当前状态：第二阶段 / 0.2.1
+Import Azure DevOps work items into a VS Code workspace as Markdown files. Preview remote changes and choose when to sync your local copies.
 
-已实现：项目级连接与目录配置、PAT 安全存储、导入与跟踪、手动同步、只读差异预览、本地修改保护和中断恢复。
+## Status
 
-尚未实现：定时检查、侧边栏、评论和附件下载。跟踪列表目前通过命令面板访问；没有后台自动更新。
+Version 0.2.1 (phase 2) supports folder-specific connections and save directories, secure personal access token (PAT) storage, import and tracking, manual sync, read-only diffs, local edit protection, and recovery after an interrupted write. Open the tracked item list from the Command Palette. Scheduled checks, a dedicated sidebar, and general attachment downloads are outside the current release.
 
-## 开发与调试
+## Development and debugging
 
-开发环境：Node.js 22 或更高版本、npm、VS Code 1.95 或更高版本。
+Use Node.js 22 or later, npm, and VS Code 1.95 or later.
 
 ~~~powershell
 npm ci --ignore-scripts
@@ -18,79 +18,70 @@ npm test
 npm run compile
 ~~~
 
-在本项目中按 F5，选择 Run DevOps Connector。在打开的 Extension Development Host 窗口中，打开一个用于测试的项目文件夹。不要误把需求保存到插件源码项目。
+Press **F5** in the extension project and select **Run DevOps Connector**. In the Extension Development Host, open a separate project folder for test exports. After changing the source, restart the debug session or run `npm run watch` and use **Developer: Reload Window** in the development host.
 
-更改代码后可以重新 F5，或使用 npm run watch 并在开发宿主中执行 Developer: Reload Window。
+## Getting started
 
-## 首次使用
+1. Press **Ctrl+Shift+P**, search for **Configuration**, and open the DevOps Connector configuration page. In a multi-root workspace, select the target folder. Choose **English** or **简体中文** under **Language**. The preference takes effect immediately across projects and applies to commands, prompts, and extension-generated text in new exports. Existing documents pick up the change on confirmed sync. Titles, field values, descriptions, and comments retain their original language.
+2. Enter your organization URL, such as `https://vffice.visualstudio.com`, and choose **Save connection**. Leave **Project name** blank to import by ID across projects. The extension reads `System.TeamProject` and builds a source link for the item's actual project. To restrict imports to one project, enter its name or use its project URL. The default save directory is `docs/workitems`.
+3. Check the PAT source on the same page. Choose **Set or replace PAT** and enter a token with **Work Items (Read)** permission in the password prompt. VS Code SecretStorage keeps it per workspace folder and organization. Removing the saved PAT lets the extension use `AZURE_DEVOPS_PAT` if that environment variable has a value. Existing connections and credentials carry over. To manage a previous organization's PAT, switch back to that organization and save the connection.
+4. Run **DevOps Connector: Import Work Item** and enter an ID or a full work item URL. A successful import confirms read access to that item.
 
-1. 按 **Ctrl+Shift+P**，输入并选择 **DevOps Connector: 配置 (Configuration)**（英文界面为 **DevOps Connector: Configuration**）。多根工作区会先提示选择文件夹。
-   在 **语言 / Language** 中可选择简体中文或 English。选择立即生效，并作为用户偏好跨项目保存。命令名称、操作提示和新导出文档的插件说明随语言切换。Azure DevOps 标题、字段值、正文和评论保留原文。已有文档在确认同步后更新。
-2. 若要跨项目使用，填写组织根地址（例如 `https://vffice.visualstudio.com`），将项目名称留空，点击 **保存连接**。导入时只需输入 Work Item 编号，插件会从 `System.TeamProject` 读取所属项目，并生成带项目名的来源链接。若填写项目名称或使用完整项目地址，则限定在该项目内。默认目录为 `docs/workitems`。
-3. 在同一页查看 PAT 来源。点击 **设置或替换 PAT**，在密码框输入具有 Work Items (Read) 权限的 PAT。凭据按工作区文件夹和组织保存在 VS Code SecretStorage。点击 **移除已存 PAT** 后，插件会使用非空的环境变量 `AZURE_DEVOPS_PAT`（如有）。
-4. 打开命令面板，运行 **DevOps Connector: Import Work Item**，输入 ID 或完整链接。首次成功导入即可确认读取权限。
+## Tracking and syncing existing exports
 
-已有连接和凭据可直接使用。切换组织后，配置页管理新组织的 PAT；要管理原组织的 PAT，请先切回并保存。
+To start tracking a file exported by version 0.1.0, keep its original project configuration and save directory.
 
-## 已导出文件的升级与同步
+1. Run **Track Existing Work Item** and enter the original ID, for example `21835`.
+2. The extension fetches the historical revision recorded in the file and reconstructs the export using its original format and timestamp. If the text matches, allowing for CRLF/LF differences, it creates a tracking record and keeps the original Markdown. If the file differs or the revision is unavailable, tracking stops. Back up local designs or notes and review the differences before retrying.
+3. Run **Sync Work Item**, select the item, and review and confirm any update. An up-to-date local copy keeps its contents and timestamp.
 
-原 0.1.0 导出文件不能直接当作可信同步基线。保持原项目配置和保存目录不变，执行：
+Version 0.2.1 uses export template 3, which adds **Specifications** (`Custom.Specifications`) and **Design** (`Custom.Design`). For an already tracked file, run **Sync Work Item** directly. Even if the remote item is still at revision 73, an older template triggers an upgrade from version 1 or 2 to version 3. Confirm once to fill in the missing content. The extension retains the older renderers for historical verification and recovery. Template upgrades use the same local edit and concurrency checks as other updates.
 
-1. **DevOps Connector: Track Existing Work Item**，输入原 Work Item ID，例如 21835。
-2. 插件读取文档记录的历史修订，使用当时的导出格式和时间重建内容并逐字核对（允许 CRLF/LF 差异）。匹配后只新增跟踪记录，不改动原 Markdown。
-3. 执行 **DevOps Connector: Sync Work Item**，选择任务，查看差异并确认同步。仅当远端修订和导出模板版本均无变化时，才不重写 Markdown。
-
-若文件有本地修改或无法获取历史修订，接入会停止；先备份设计/笔记并核对差异，不会把自定义内容静默纳入可覆盖基线。
-
-0.2.1 使用导出模板 3，新增 Custom.Specifications（需求规格）和 Custom.Design（设计说明）。已跟踪的旧模板文件无需再次 Track Existing Work Item，直接 Sync Work Item 即可；即使远端仍为修订 73，也会提示“导出模板 1/2 → 3（补全文档内容）”。确认后补全内容和模板版本，之后再次同步不会重复重写。
-
-旧模板 1/2 仍保留用于核对历史导出和中断恢复，不会用新模板直接比较旧文件。模板升级同样受本地修改、未保存编辑和并发保护约束。
-
-| 命令 | 行为 |
+| Command | What it does |
 |---|---|
-| Show Tracked Work Items | 查看当前保存目录的任务、修订、检查时间与状态；选择任务后可打开或同步 |
-| Sync Work Item | 检查单项，确认后更新；可先看差异 |
-| Sync All Work Items | 批量确认后更新无本地修改的任务；跳过冲突与错误，提供汇总 |
-| View Remote Changes | 仅检查并预览本地与远端差异，不修改需求文件 |
-| Compare with Last Synced Version | 离线比较上次成功同步基线与当前本地文件 |
-| Stop Tracking Work Item | 确认后仅删除跟踪基线；保留需求、设计与笔记 |
+| Show Tracked Work Items | Lists items in the current save directory with their revision, last check, and status. Select an item to open or sync it. |
+| Sync Work Item | Checks one item and asks before updating. You can preview the diff first. |
+| Sync All Work Items | Updates eligible items after batch confirmation, skips conflicts and errors, and reports the results. |
+| View Remote Changes | Opens a read-only diff between the local copy and the incoming document. |
+| Compare with Last Synced Version | Compares the local file with its last successful sync baseline, including offline. |
+| Stop Tracking Work Item | Removes the tracking record after confirmation and keeps the work item, designs, and notes. |
 
-如果已跟踪的 `workitem.md` 被删除，运行 **Sync Work Item** 并确认同步即可重新生成，即使远端修订未改变。需要保留同目录的 `.devops-sync.json`。本地文件有修改或未保存编辑时，同步会提示冲突。可先用 Compare with Last Synced Version 将笔记移到独立文件，再手动恢复基线文本并保存，重新检查同步；插件没有“强制覆盖”按钮。
+If you delete a tracked `workitem.md`, keep the adjacent `.devops-sync.json`. Run **Sync Work Item** and confirm to recreate the file, even when the remote revision is unchanged. If the file contains local changes or unsaved edits, sync reports a conflict. Use **Compare with Last Synced Version** to identify your changes, move notes to a separate file, restore and save the baseline text, then check again.
 
-“已建立基线”不代表已检查最新版本；“有更新”不代表已写入本地。只有文档和跟踪记录提交成功后才报告同步成功。
+**Baseline established** means the extension has a verified local copy. **Update available** means it has found a change. Sync reports success after both the document and tracking record have been saved.
 
-## 保存结果
+## Exported files
 
 ~~~text
-目标项目/
+your-project/
 └── docs/workitems/
     └── 21835/
-        ├── workitem.md       插件管理的需求副本
-        ├── .devops-sync.json 同步来源、完整基线、哈希及检查状态
-        ├── images/           随 Work Item 自动下载到本地的图片
-        ├── design.md         可自行创建，插件不管理
-        └── notes.md          可自行创建，插件不管理
+        ├── workitem.md       Managed Markdown copy
+        ├── .devops-sync.json Source, full baseline, hash, and check status
+        ├── images/           Images downloaded with the work item
+        ├── design.md         Optional, user-maintained design
+        └── notes.md          Optional, user-maintained notes
 ~~~
 
-内容包括标题、ID、Revision、Template Version、Work Item Type、State、Reason、Assigned To、Area、Iteration、Tags、Project、Source、Changed Date、Exported At 等英文元数据字段，以及 Description、Specifications（`Custom.Specifications`）、Acceptance Criteria、Design（`Custom.Design`）、Repro Steps、Comments 正文章节。所有元数据标签与正文章节标题均按 Azure DevOps 原文显示；自定义规格/设计与标准验收字段分别展示，不互相替代。未提供的字段明确显示占位。时间以 UTC ISO 格式保存。
+The export includes the title, ID, revision, template version, work item type, state, reason, assignee, area, iteration, tags, project, source link, change date, and export time. Metadata labels and section headings use English Azure DevOps terminology. The body contains Description, Specifications, Acceptance Criteria, Design, Repro Steps, and Comments. Custom specifications and design fields have their own sections. Empty sections have placeholders. Timestamps use ISO format in UTC.
 
-Work Item 正文及评论中的 HTTPS 图片会在导入或同步时自动下载到本地 `images/` 目录，并在 `workitem.md` 中使用相对路径引用（例如 `images/example.png`）。若字段或评论为 Markdown 格式，将保留其原始 Markdown 结构而非转义折叠。HTML 转换保留常见标题、列表、代码和简单表格；复杂富文本不保证与网页完全一致。
+Comments appear newest first by creation time. HTTPS images in fields and comments download to `images/` and use relative paths such as `images/example.png`. Markdown input retains its structure. HTML conversion supports common headings, lists, code, and simple tables. Complex rich text can look different from the Azure DevOps web view.
 
-## 安全与限制
+## Security and limitations
 
-- 只读 Azure DevOps Services API 7.1。支持 dev.azure.com 和 visualstudio.com 地址；保留配置的域名用于请求与导出链接，不强制改写域名。同一组织的两种地址共享凭据身份。
-- 不支持自建 Azure DevOps Server、双向回写、Web/虚拟工作区。远程开发和企业代理仍待专项验收。
-- 只在用户主动导入、接入跟踪或检查/同步时联网；没有后台轮询、遥测或 AI 上传。
-- 仅向经过校验的 Azure DevOps 云端地址发送 PAT，不跟随重定向；网络错误不输出原始响应或凭据。
-- 要求可信工作区。保存目录禁止绝对路径、父目录跳转、保留名称和目录中的符号链接/目录联接。
-- 首次创建以独占硬链接发布；更新采用同目录临时文件与原子替换。文件系统不支持所需能力时失败，不退回直接截断写入。
-- 同步仅更新基线哈希仍匹配的 workitem.md；保存前再次检查哈希与编辑器未保存状态。每项文件锁协调插件的多个窗口；不能保证阻止外部编辑器/进程在最后检查与替换之间写入或恶意替换目录。
-- .devops-sync.pending.json 用于处理文档与状态之间的中断。恢复只核对文件并完成状态提交，不覆盖用户文件；检测到额外修改则停止。异常退出后遗留的锁须按 docs/manual-test.md 中步骤处理。
-- 组织、项目与 ID 共同确定来源。切换来源会拒绝同步旧来源条目；切换保存目录不会搬动旧文档，也不会扫描旧目录。
-- 网络请求超时为 20 秒，响应上限为 5 MB；取消在文件提交前生效，完成文件保存后不回滚。
-- 需求与 .devops-sync.json 中的完整基线都可能含内部资料。是否提交 Git 由项目自行决定；建议在变更提交前检查这些文件。插件不会自动提交或推送。
+- The extension uses the read-only Azure DevOps Services API 7.1. Requests and exported links preserve the configured `dev.azure.com` or `visualstudio.com` hostname. Both URL forms for the same organization share a credential identity.
+- The extension supports trusted, file-system workspaces and Azure DevOps Services. Self-hosted Azure DevOps Server, write-back, and web or virtual workspaces are unsupported. Remote development and enterprise proxy setups still require verification.
+- Network activity occurs during user-initiated imports, tracking, checks, or syncs. The extension has no background polling, telemetry, or AI uploads.
+- The extension sends the PAT only to validated Azure DevOps cloud URLs, rejects redirects, and keeps credentials and raw response bodies out of network errors.
+- The save directory must be inside the workspace. Path validation rejects absolute paths, parent traversal, reserved names, symbolic links, and directory junctions.
+- New files use exclusive hard-link creation. Updates use a temporary file in the same directory and an atomic replacement. Saving stops if the file system lacks the required capability.
+- Before updating an existing file, sync rechecks its baseline hash and looks for unsaved edits. A per-item lock coordinates extension windows. External processes can still change files or replace directories between the final check and the write.
+- A `.devops-sync.pending.json` journal allows recovery if a write stops between saving the document and its tracking state. Recovery checks the files and completes the state update when safe. Additional edits stop recovery. For a lock left after a crash, follow the recovery steps in `docs/manual-test.md`.
+- Organization, project, and ID identify the source. Switching to an incompatible source prevents sync. Changing the save directory leaves earlier exports in place and limits tracking to the newly selected directory.
+- Requests time out after 20 seconds. Work item responses are limited to 5 MB. Cancellation takes effect before file commit. Completed saves remain on disk.
+- The Markdown file and the full baseline in `.devops-sync.json` can both contain internal information. Review them before committing. The extension leaves Git commits and pushes to the user.
 
-## 验证与打包
+## Verification and packaging
 
 ~~~powershell
 npm run check
@@ -99,17 +90,17 @@ npm run compile
 npm run package
 ~~~
 
-本地安装包生成在 work/devops-connector-0.2.1.vsix。通过 VS Code 扩展面板的“从 VSIX 安装”安装；安装不会发布到 Marketplace。F5 开发方式请停止旧调试后重新 F5。
+The final command creates `work/devops-connector-0.2.1.vsix`. In the VS Code Extensions view, choose **Install from VSIX...** to install it locally. When testing via **F5**, stop the previous debug session before starting a new one.
 
-publisher 当前为本地占位值；未选择分发许可证，也未配置远程仓库。打包跳过许可证检查仅用于本地开发，发布前必须补齐这些信息。
+The publisher is a local placeholder. Before distributing the extension, configure its repository and choose a distribution license. Local packaging skips the license check.
 
-单元测试使用模拟 API，不需要真实 PAT。用户已确认真实项目首次导入成功；新增的旧文件接入、手动同步与差异 UI 仍需按 docs/manual-test.md 联调。可在编译后运行 node scripts/smoke.mjs 加已安装的 Code.exe 路径进行隔离宿主启动检查；它使用 work 下的独立配置，不读取真实项目或 PAT。
+Unit tests use a mock API and run without a real PAT. Initial import has been confirmed with a real project. Use `docs/manual-test.md` for live checks of existing exports, manual sync, and the diff UI. After compiling, run `node scripts/smoke.mjs` with the path to an installed `Code.exe` to check startup in an isolated extension host. It uses a separate profile under `work/` and leaves real projects and credentials untouched.
 
-后续开发顺序见 docs/roadmap.md。
+See `docs/roadmap.md` for planned development.
 
-## 参考
+## References
 
 - [Work Items REST API 7.1](https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/work-items/get-work-item?view=azure-devops-rest-7.1)
-- [Work Item 历史修订 API](https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/revisions/get?view=azure-devops-rest-7.1)
-- [VS Code API / SecretStorage](https://code.visualstudio.com/api/references/vscode-api#SecretStorage)
+- [Get a historical work item revision](https://learn.microsoft.com/en-us/rest/api/azure/devops/wit/revisions/get?view=azure-devops-rest-7.1)
+- [VS Code SecretStorage API](https://code.visualstudio.com/api/references/vscode-api#SecretStorage)
 - [VS Code Workspace Trust](https://code.visualstudio.com/api/extension-guides/workspace-trust)
