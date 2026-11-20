@@ -25,6 +25,7 @@
       { "command": "devopsConnector.previewChanges", "title": "View Remote Changes", "category": "DevOps Connector" },
       { "command": "devopsConnector.compareBaseline", "title": "Compare with Last Synced Version", "category": "DevOps Connector" },
       { "command": "devopsConnector.stopTracking", "title": "Stop Tracking Work Item", "category": "DevOps Connector" },
+      { "command": "devopsConnector.translateWorkItem", "title": "Translate Work Item to Chinese", "category": "DevOps Connector" },
       {"command": "devopsConnector.configure.zh", "title": "配置 (Configuration)", "category": "DevOps Connector", "icon": "$(gear)"},
       {"command": "devopsConnector.importWorkItem.zh", "title": "导入工作项", "category": "DevOps Connector"},
       {"command": "devopsConnector.trackExistingWorkItem.zh", "title": "跟踪已有工作项", "category": "DevOps Connector"},
@@ -33,7 +34,8 @@
       {"command": "devopsConnector.syncAllWorkItems.zh", "title": "同步全部工作项", "category": "DevOps Connector"},
       {"command": "devopsConnector.previewChanges.zh", "title": "查看远端更改", "category": "DevOps Connector"},
       {"command": "devopsConnector.compareBaseline.zh", "title": "与上次同步版本比较", "category": "DevOps Connector"},
-      {"command": "devopsConnector.stopTracking.zh", "title": "停止跟踪工作项", "category": "DevOps Connector"}
+      {"command": "devopsConnector.stopTracking.zh", "title": "停止跟踪工作项", "category": "DevOps Connector"},
+      {"command": "devopsConnector.translateWorkItem.zh", "title": "翻译工作项为中文", "category": "DevOps Connector"}
     ],
     "menus": {
       "commandPalette": [
@@ -46,6 +48,7 @@
       {"command": "devopsConnector.previewChanges", "when": "config.devopsConnector.language == en"},
       {"command": "devopsConnector.compareBaseline", "when": "config.devopsConnector.language == en"},
       {"command": "devopsConnector.stopTracking", "when": "config.devopsConnector.language == en"},
+      {"command": "devopsConnector.translateWorkItem", "when": "config.devopsConnector.language == en"},
       {"command": "devopsConnector.configure.zh", "when": "config.devopsConnector.language != en"},
       {"command": "devopsConnector.importWorkItem.zh", "when": "config.devopsConnector.language != en"},
       {"command": "devopsConnector.trackExistingWorkItem.zh", "when": "config.devopsConnector.language != en"},
@@ -54,7 +57,8 @@
       {"command": "devopsConnector.syncAllWorkItems.zh", "when": "config.devopsConnector.language != en"},
       {"command": "devopsConnector.previewChanges.zh", "when": "config.devopsConnector.language != en"},
       {"command": "devopsConnector.compareBaseline.zh", "when": "config.devopsConnector.language != en"},
-      {"command": "devopsConnector.stopTracking.zh", "when": "config.devopsConnector.language != en"}
+      {"command": "devopsConnector.stopTracking.zh", "when": "config.devopsConnector.language != en"},
+      {"command": "devopsConnector.translateWorkItem.zh", "when": "config.devopsConnector.language != en"}
       ],
       "view/title": [
       {"command": "devopsConnector.configure", "when": "view == workbench.explorer.fileView && isWorkspaceTrusted && config.devopsConnector.language == en", "group": "navigation@99"},

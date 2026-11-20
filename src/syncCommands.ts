@@ -1,5 +1,6 @@
 import { t } from './i18n';
 import * as vscode from 'vscode';
+import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { AzureDevOpsClient } from './azureDevOpsClient';
@@ -8,6 +9,14 @@ import { importFilePath } from './storage';
 import { SyncRepository } from './syncRepository';
 import { ExistingFileMismatch, SyncService, TrackedItem } from './syncService';
 import { describeChanges, SyncPlan } from './syncModel';
+import {
+  buildTranslationPrompt,
+  extractWorkItemIdFromPath,
+  saveTranslatedWorkItem,
+  splitMarkdownChunks,
+  stripMarkdownFence,
+  translatedFilePath,
+} from './translation';
 import { parseWorkItemInput } from './validation';
 import { UserError } from './types';
 
@@ -39,11 +48,15 @@ export function registerSyncCommands(context: vscode.ExtensionContext, client: A
   };
   const target = (session: Session, id: number) =>
     vscode.Uri.file(importFilePath(session.folder.uri.fsPath, session.settings.saveDirectory, id));
-  const isDirty = (session: Session, id: number) => vscode.workspace.textDocuments.some((document) =>
-    document.uri.scheme === 'file' && document.isDirty && pathKey(document.uri.fsPath) === pathKey(target(session, id).fsPath));
-  const guard = (session: Session, id: number) => {
-    if (isDirty(session, id)) { throw new UserError(t('目标文件有未保存的编辑，已停止写入。')); }
+  const translatedTarget = (session: Session, id: number) =>
+    vscode.Uri.file(translatedFilePath(session.folder.uri.fsPath, session.settings.saveDirectory, id));
+  const isFileDirty = (file: vscode.Uri) => vscode.workspace.textDocuments.some((document) =>
+    document.uri.scheme === 'file' && document.isDirty && pathKey(document.uri.fsPath) === pathKey(file.fsPath));
+  const isDirty = (session: Session, id: number) => isFileDirty(target(session, id));
+  const guardFile = (file: vscode.Uri) => {
+    if (isFileDirty(file)) { throw new UserError(t('目标文件有未保存的编辑，已停止写入。')); }
   };
+  const guard = (session: Session, id: number) => guardFile(target(session, id));
   const session = async (): Promise<Session | undefined> => {
     const folder = await chooseFolder();
     if (!folder) { return undefined; }
@@ -84,12 +97,15 @@ export function registerSyncCommands(context: vscode.ExtensionContext, client: A
     })), { title: t('DevOps Connector · 已跟踪 Work Items'), matchOnDescription: true, matchOnDetail: true });
     return selected?.item;
   };
-  const progress = async <T>(title: string, action: (signal: AbortSignal) => Promise<T>): Promise<T> =>
-    vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title, cancellable: true }, async (_p, cancellation) => {
+  const progress = async <T>(
+    title: string,
+    action: (signal: AbortSignal, reporter: vscode.Progress<{ message?: string; increment?: number }>) => Promise<T>,
+  ): Promise<T> =>
+    vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title, cancellable: true }, async (reporter, cancellation) => {
       const controller = new AbortController();
       const subscription = cancellation.onCancellationRequested(() => controller.abort());
       if (cancellation.isCancellationRequested) { controller.abort(); }
-      try { return await action(controller.signal); }
+      try { return await action(controller.signal, reporter); }
       catch (error) { if (controller.signal.aborted) { throw new vscode.CancellationError(); } throw error; }
       finally { subscription.dispose(); }
     });
@@ -183,12 +199,104 @@ export function registerSyncCommands(context: vscode.ExtensionContext, client: A
     const current = await session(); if (!current) { return; }
     const item = await pick(current); if (item) { await untrack(current, item.id); }
   });
+  const translateWithLm = async (
+    markdown: string,
+    signal: AbortSignal,
+    reporter: vscode.Progress<{ message?: string; increment?: number }>,
+  ): Promise<{ content: string; modelLabel: string; chunks: number }> => {
+    const models = await vscode.lm.selectChatModels();
+    const model = models[0];
+    if (!model) {
+      throw new UserError(t('未找到可用的 VS Code 语言模型。请确认已安装并登录支持 Language Model API 的扩展（如 GitHub Copilot）。'));
+    }
+    const modelLabel = model.vendor + '/' + model.name;
+    const chunks = splitMarkdownChunks(markdown);
+    if (chunks.length === 0) {
+      throw new UserError(t('语言模型未返回任何翻译内容。'));
+    }
+
+    const cts = new vscode.CancellationTokenSource();
+    const onAbort = () => cts.cancel();
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) { cts.cancel(); }
+    try {
+      const translatedChunks: string[] = [];
+      for (let i = 0; i < chunks.length; i++) {
+        if (signal.aborted) { throw new vscode.CancellationError(); }
+        reporter.report({ message: `${modelLabel} (${i + 1}/${chunks.length})` });
+        const response = await model.sendRequest(
+          [vscode.LanguageModelChatMessage.User(buildTranslationPrompt(chunks[i]!))],
+          {},
+          cts.token,
+        );
+        let output = '';
+        for await (const chunk of response.text) {
+          if (signal.aborted) { throw new vscode.CancellationError(); }
+          output += chunk;
+        }
+        const cleaned = stripMarkdownFence(output).trimEnd();
+        if (!cleaned.trim()) {
+          throw new UserError(t('语言模型未返回任何翻译内容。'));
+        }
+        translatedChunks.push(cleaned);
+      }
+      return { content: translatedChunks.join('\n\n') + '\n', modelLabel, chunks: chunks.length };
+    } catch (error) {
+      if (error instanceof vscode.CancellationError) { throw error; }
+      if (error instanceof vscode.LanguageModelError) {
+        if (error.code === vscode.LanguageModelError.NoPermissions().code ||
+            error.code === vscode.LanguageModelError.Blocked().code) {
+          throw new UserError(t('语言模型访问被拒绝或未授权，请确认权限后重试。'));
+        }
+        throw new UserError(t('语言模型翻译失败：') + error.message);
+      }
+      throw error;
+    } finally {
+      signal.removeEventListener('abort', onAbort);
+      cts.dispose();
+    }
+  };
+  const translateOne = async (current: Session, id: number) => {
+    const sourceUri = target(current, id);
+    let sourceMarkdown: string;
+    try {
+      sourceMarkdown = await fs.readFile(sourceUri.fsPath, 'utf8');
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        throw new UserError(t('本地 workitem.md 不存在，请先导入。'));
+      }
+      throw error;
+    }
+    const outUri = translatedTarget(current, id);
+    guardFile(outUri);
+    const result = await progress(t('正在翻译 #') + id, (signal, reporter) => translateWithLm(sourceMarkdown, signal, reporter));
+    guardFile(outUri);
+    await saveTranslatedWorkItem(current.folder.uri.fsPath, current.settings.saveDirectory, id, result.content);
+    await vscode.window.showTextDocument(outUri, { preview: false });
+    await vscode.window.showInformationMessage(
+      '#' + id + t(' 已翻译并保存为 workitem.zh-CN.md。') + t('（模型：') + result.modelLabel + t('，共 ') + result.chunks + t(' 段）'),
+    );
+  };
+  register('devopsConnector.translateWorkItem', async () => {
+    const current = await session(); if (!current) { return; }
+    const activeUri = vscode.window.activeTextEditor?.document.uri;
+    const activeId = activeUri?.scheme === 'file'
+      ? extractWorkItemIdFromPath(current.folder.uri.fsPath, current.settings.saveDirectory, activeUri.fsPath)
+      : undefined;
+    if (activeId !== undefined) {
+      await translateOne(current, activeId);
+      return;
+    }
+    const item = await pick(current);
+    if (item) { await translateOne(current, item.id); }
+  });
   register('devopsConnector.showTrackedWorkItems', async () => {
     const current = await session(); if (!current) { return; }
     const item = await pick(current); if (!item) { return; }
     const action = await vscode.window.showQuickPick(
-      [t('打开本地文件'), t('同步'), t('查看远端差异'), t('与上次同步版本比较'), t('停止跟踪')], { title: '#' + item.id });
+      [t('打开本地文件'), t('翻译为中文'), t('同步'), t('查看远端差异'), t('与上次同步版本比较'), t('停止跟踪')], { title: '#' + item.id });
     if (action === t('打开本地文件')) { await vscode.window.showTextDocument(target(current, item.id), { preview: false }); }
+    else if (action === t('翻译为中文')) { await translateOne(current, item.id); }
     else if (action === t('同步')) { await syncOne(current, item.id); }
     else if (action === t('查看远端差异')) { await syncOne(current, item.id, true); }
     else if (action === t('与上次同步版本比较')) { await compareBaseline(current, item.id); }

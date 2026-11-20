@@ -215,6 +215,18 @@ const english = {
   "链接与当前项目配置的组织或项目不一致，请先切换连接配置。": "The URL points to another organization or project. Switch connections first.",
   "不支持此链接格式，请使用 /项目/_workitems/edit/ID 或直接输入 ID。": "Use /project/_workitems/edit/ID or enter the ID directly.",
   "请先运行 DevOps Connector: Configuration 设置 PAT，或设置环境变量 AZURE_DEVOPS_PAT。": "Set a PAT in DevOps Connector: Configuration or set the AZURE_DEVOPS_PAT environment variable.",
+  "保存路径包含符号链接、目录联接或非目录项，已停止操作。": "The save path contains a link, junction, or non-directory entry. Operation stopped.",
+  "目标翻译文件不是普通文件、包含链接或超过大小限制，已停止操作。": "The translated file is not a regular file, is a link, or exceeds the size limit. Operation stopped.",
+  "未找到可用的 VS Code 语言模型。请确认已安装并登录支持 Language Model API 的扩展（如 GitHub Copilot）。": "No VS Code language model is available. Ensure an extension providing Language Model API access (such as GitHub Copilot) is installed and signed in.",
+  "语言模型访问被拒绝或未授权，请确认权限后重试。": "Language model access was denied or not authorized. Check permissions and try again.",
+  "语言模型翻译失败：": "Language model translation failed: ",
+  "语言模型未返回任何翻译内容。": "The language model returned empty content.",
+  "正在翻译 #": "Translating #",
+  " 已翻译并保存为 workitem.zh-CN.md。": " translated and saved as workitem.zh-CN.md.",
+  "翻译为中文": "Translate to Chinese",
+  "（模型：": " (Model: ",
+  "，共 ": ", ",
+  " 段）": " chunks)",
 } as const;
 
 export function t(message: keyof typeof english, locale = language()): string {
