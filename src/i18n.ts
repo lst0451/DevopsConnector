@@ -9,6 +9,7 @@ export function language(): Language { return scope.getStore() ?? preference; }
 export function withLanguage<T>(value: Language, action: () => T): T { return scope.run(value, action); }
 
 const english = {
+  "重建缺失的 workitem.md": "Recreate missing workitem.md",
   "语言": "Language",
   "DevOps Connector 配置": "DevOps Connector Configuration",
   "工作区": "Workspace",
@@ -90,7 +91,7 @@ const english = {
   "已建立基线": "Baseline established",
   "修订和模板均为最新": "Revision and template up to date",
   "有更新": "Update available",
-  "本地已修改/缺失": "Local file modified or missing",
+  "本地已修改": "Local file modified",
   "错误": "Error",
   "此预览已关闭，请重新执行比较命令。": "This preview has closed. Run the comparison command again.",
   "目标文件有未保存的编辑，已停止写入。": "The target file has unsaved edits. Save or discard them before continuing.",
@@ -107,7 +108,7 @@ const english = {
   "，模板 ": ", template ",
   "）": ")",
   "正在检查 #": "Checking #",
-  "检测到本地修改、未保存编辑或文件缺失，未覆盖。可使用 Compare with Last Synced Version 查看基线并手动处理。": "Local changes, unsaved edits, or a missing file prevented the update. Use Compare with Last Synced Version to review the baseline.",
+  "检测到本地修改或未保存编辑，未覆盖。可使用 Compare with Last Synced Version 查看基线并手动处理。": "Local changes or unsaved edits prevented the update. Use Compare with Last Synced Version to review the baseline.",
   "：远端修订 ": ": Remote revision ",
   " 和导出模板 ": " and export template ",
   " 均无变化，未重写文件。": " are unchanged. The local file was preserved.",
@@ -143,7 +144,7 @@ const english = {
   "开始同步": "Start Sync",
   "正在同步已跟踪 Work Items": "Syncing tracked work items",
   "已取消：剩余任务未处理。": "Cancelled. Remaining items were skipped.",
-  " 跳过：本地修改或文件缺失": " skipped: local file modified or missing",
+  " 跳过：本地修改": " skipped: local file modified",
   " 修订和导出模板均无变化": " unchanged revision and export template",
   " 已同步：": " synced: ",
   " 失败：": " failed: ",
@@ -193,7 +194,7 @@ const english = {
   "跟踪记录已被移除，请重新检查。": "The tracking record was removed. Check again.",
   "其他窗口已更新此任务，请重新检查。": "Another window updated this item. Check again.",
   "预览后本地文件发生变化，已停止覆盖。": "The local file changed after preview. Update stopped.",
-  "本地文件已修改或缺失": "Local file modified or missing",
+  "本地文件已修改": "Local file modified",
   "导出模板需升级至 ": "Export template update available: ",
   "，请执行同步补全内容": ". Sync to complete the document",
   "无法读取跟踪记录。": "Could not read the tracking record.",

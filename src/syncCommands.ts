@@ -13,7 +13,7 @@ import { UserError } from './types';
 
 type Register = (id: string, action: () => Promise<void>) => void;
 type Session = { folder: vscode.WorkspaceFolder; settings: ReturnType<typeof readSettings>; service: SyncService };
-const labels = () => ({ synced: t('已建立基线'), unchanged: t('修订和模板均为最新'), updateAvailable: t('有更新'), conflict: t('本地已修改/缺失'), error: t('错误') });
+const labels = () => ({ synced: t('已建立基线'), unchanged: t('修订和模板均为最新'), updateAvailable: t('有更新'), conflict: t('本地已修改'), error: t('错误') });
 function pathKey(file: string): string {
   const normalized = path.resolve(file);
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
@@ -108,7 +108,7 @@ export function registerSyncCommands(context: vscode.ExtensionContext, client: A
     if (previewOnly || plan.conflict) {
       await showPlan(current, plan);
       if (plan.conflict) {
-        await vscode.window.showWarningMessage(t('检测到本地修改、未保存编辑或文件缺失，未覆盖。可使用 Compare with Last Synced Version 查看基线并手动处理。'));
+        await vscode.window.showWarningMessage(t('检测到本地修改或未保存编辑，未覆盖。可使用 Compare with Last Synced Version 查看基线并手动处理。'));
       }
       return;
     }
@@ -212,7 +212,7 @@ export function registerSyncCommands(context: vscode.ExtensionContext, client: A
         try {
           const plan = await current.service.check(item.id, pat, () => isDirty(current, item.id), signal);
           if (signal.aborted) { wasCancelled = true; report.push(t('已取消：剩余任务未处理。')); break; }
-          if (plan.conflict) { counts.conflict++; report.push('#' + item.id + t(' 跳过：本地修改或文件缺失')); }
+          if (plan.conflict) { counts.conflict++; report.push('#' + item.id + t(' 跳过：本地修改')); }
           else if (!plan.changed) { counts.unchanged++; report.push('#' + item.id + t(' 修订和导出模板均无变化')); }
           else {
             await current.service.apply(plan, () => guard(current, item.id));

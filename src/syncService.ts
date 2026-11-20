@@ -163,9 +163,11 @@ export class SyncService {
       }
       const checkedAt = this.now().toISOString();
       const document = await local.readDocument();
-      const conflict = document === undefined || digest(document) !== state.hash || isDirty();
-      const changed = revisionChanged || templateChanged || imagesChanged || formatChanged;
-      const next = changed ? makeState(item, connection, checkedAt, resolvedImages?.paths) : state;
+      const conflict = (document !== undefined && digest(document) !== state.hash) || isDirty();
+      const contentChanged = revisionChanged || templateChanged || imagesChanged || formatChanged;
+      const changed = contentChanged || document === undefined;
+      const next = contentChanged ? makeState(item, connection, checkedAt, resolvedImages?.paths) :
+        { ...state, checkedAt, attemptedAt, error: undefined, status: 'synced' as const };
       await local.writeState({
         ...state, attemptedAt, checkedAt, error: undefined,
         status: conflict ? 'conflict' : changed ? 'updateAvailable' : 'unchanged',
@@ -190,11 +192,12 @@ export class SyncService {
       }
       const document = await local.readDocument();
       guard();
-      if (document === undefined || digest(document) !== plan.expectedHash) {
+      const restoreMissing = plan.local === undefined;
+      if (restoreMissing ? document !== undefined : document === undefined || digest(document) !== plan.expectedHash) {
         throw new UserError(t('预览后本地文件发生变化，已停止覆盖。'));
       }
       if (!plan.changed) { return; }
-      await local.commit(plan.next, plan.expectedHash, guard, plan.images);
+      await local.commit(plan.next, plan.expectedHash, guard, plan.images, restoreMissing);
     });
   }
 
@@ -203,13 +206,13 @@ export class SyncService {
     for (const id of await this.repository.listIds()) {
       try {
         const { state, local } = await this.inspect(id);
-        const conflict = local === undefined || digest(local) !== state.hash;
+        const conflict = local !== undefined && digest(local) !== state.hash;
         const templateChanged = state.rendererVersion < CURRENT_RENDERER_VERSION;
         result.push({
           id, title: state.title, workItemState: readWorkItemState(state.baseline),
           revision: state.revision, rendererVersion: state.rendererVersion, checkedAt: state.checkedAt,
-          status: conflict ? 'conflict' : state.status === 'error' ? 'error' : templateChanged ? 'updateAvailable' : state.status,
-          detail: conflict ? t('本地文件已修改或缺失') : [state.error && localizeStoredError(state.error),
+          status: conflict ? 'conflict' : state.status === 'error' ? 'error' : local === undefined || templateChanged ? 'updateAvailable' : state.status,
+          detail: conflict ? t('本地文件已修改') : [local === undefined ? t('重建缺失的 workitem.md') : undefined, state.error && localizeStoredError(state.error),
             templateChanged ? t('导出模板需升级至 ') + CURRENT_RENDERER_VERSION + t('，请执行同步补全内容') : undefined].filter(Boolean).join(t('；')),
         });
       } catch (error) {

@@ -147,15 +147,51 @@ test('unsaved edits block sync; edits after preview also block commit', async (t
   assert.match(await fs.readFile(s.file, 'utf8'), /changed after preview/);
 });
 
-test('missing document is not silently recreated by sync', async (t) => {
-  const s = await setup(t);
-  await s.service.import(42, 'not-real', guard);
+for (const revision of [1, 2]) {
+  test('sync recreates a deleted document at revision ' + revision, async t => {
+    const s = await setup(t);
+    await s.service.import(42, 'test', guard);
+    await fs.unlink(s.file);
+    s.client.latest = fixture(revision);
+    const plan = await s.service.check(42, 'test', clean);
+    assert.equal(plan.conflict, false);
+    assert.equal(plan.changed, true);
+    await assert.rejects(fs.stat(s.file), { code: 'ENOENT' });
+    await s.service.apply(plan, guard);
+    assert.equal(await fs.readFile(s.file, 'utf8'), plan.next.baseline);
+    assert.equal((await s.service.inspect(42)).state.revision, revision);
+    assert.equal((await s.service.check(42, 'test', clean)).changed, false);
+  });
+}
+
+test('interrupted restore can retry before publication and recover after publication', async t => {
+  let interrupt = false;
+  const s = await setup(t, async () => { if (interrupt) { throw new Error('interrupted'); } });
+  await s.service.import(42, 'test', guard);
   await fs.unlink(s.file);
   s.client.latest = fixture(2);
-  const plan = await s.service.check(42, 'not-real', clean);
-  assert.equal(plan.conflict, true);
+  const plan = await s.service.check(42, 'test', clean);
+  await fs.writeFile(path.join(s.directory, PENDING_FILE), JSON.stringify({
+    schema: 1, beforeHash: plan.expectedHash, restoreMissing: true, after: plan.next,
+  }));
+  assert.equal((await s.service.inspect(42)).local, undefined);
+  interrupt = true;
+  await assert.rejects(s.service.apply(plan, guard), /interrupted/);
+  const recovered = await s.service.inspect(42);
+  assert.equal(recovered.local, recovered.state.baseline);
+  assert.equal(recovered.state.revision, 2);
+  await assert.rejects(fs.stat(path.join(s.directory, PENDING_FILE)), { code: 'ENOENT' });
+});
+
+test('restore protects dirty editors and files recreated after preview', async t => {
+  const s = await setup(t);
+  await s.service.import(42, 'test', guard);
+  await fs.unlink(s.file);
+  assert.equal((await s.service.check(42, 'test', () => true)).conflict, true);
+  const plan = await s.service.check(42, 'test', clean);
+  await fs.writeFile(s.file, 'manual replacement');
   await assert.rejects(s.service.apply(plan, guard));
-  await assert.rejects(fs.stat(s.file), { code: 'ENOENT' });
+  assert.equal(await fs.readFile(s.file, 'utf8'), 'manual replacement');
 });
 
 test('network failure retains document/baseline and does not advance last successful check', async (t) => {

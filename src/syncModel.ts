@@ -23,7 +23,7 @@ export interface SyncState {
   status: SyncStatus;
   error?: string;
 }
-export interface PendingWrite { schema: 1; beforeHash: string | null; after: SyncState }
+export interface PendingWrite { schema: 1; beforeHash: string | null; restoreMissing?: true; after: SyncState }
 export interface SyncPlan {
   id: number;
   expectedHash: string;
@@ -39,6 +39,7 @@ export interface SyncPlan {
 }
 export function describeChanges(plan: SyncPlan): string {
   const changes: string[] = [];
+  if (plan.local === undefined) { changes.push(t('重建缺失的 workitem.md')); }
   if (plan.revisionChanged) { changes.push(t('远端修订 ') + plan.previous.revision + ' → ' + plan.next.revision); }
   if (plan.templateChanged) {
     changes.push(t('导出模板 ') + plan.previous.rendererVersion + ' → ' + plan.next.rendererVersion + t('（补全文档内容）'));
@@ -87,10 +88,11 @@ export function parseState(value: unknown, id: number): SyncState {
 }
 export function parsePending(value: unknown, id: number): PendingWrite {
   if (!isObject(value) || value.schema !== 1 ||
+    (value.restoreMissing !== undefined && (value.restoreMissing !== true || value.beforeHash === null)) ||
     (value.beforeHash !== null && (typeof value.beforeHash !== 'string' || !/^[a-f0-9]{64}$/.test(value.beforeHash)))) {
     throw new UserError(t('同步恢复记录无效，已停止写入。'));
   }
-  return { schema: 1, beforeHash: value.beforeHash as string | null, after: parseState(value.after, id) };
+  return { schema: 1, beforeHash: value.beforeHash as string | null, restoreMissing: value.restoreMissing === true ? true : undefined, after: parseState(value.after, id) };
 }
 
 export interface ExistingExport { language: Language; revision: number; importedAt: Date; connection: Connection; rendererVersion: RendererVersion }

@@ -90,7 +90,7 @@ export class LockedItem {
     const hash = document === undefined ? null : digest(document);
     if (hash === pending.after.hash) {
       await this.writeState(pending.after);
-    } else if (hash !== pending.beforeHash || (state?.hash ?? null) !== pending.beforeHash) {
+    } else if (hash !== (pending.restoreMissing ? null : pending.beforeHash) || (state?.hash ?? null) !== pending.beforeHash) {
       throw new UserError(t('上次同步中断后文件又被修改；请保留 pending 和状态文件，先人工核对。'));
     }
     // No document is ever changed during recovery.
@@ -147,16 +147,17 @@ export class LockedItem {
       } finally { await fs.unlink(temporary).catch(() => undefined); }
     }
   }
-  async commit(next: SyncState, expectedHash: string | null, guard: () => void, images?: ReadonlyMap<string, Uint8Array>): Promise<void> {
+  async commit(next: SyncState, expectedHash: string | null, guard: () => void, images?: ReadonlyMap<string, Uint8Array>, restoreMissing = false): Promise<void> {
+    const expectedDocumentHash = restoreMissing ? null : expectedHash;
     const document = await this.readDocument();
-    if ((document === undefined ? null : digest(document)) !== expectedHash) {
+    if ((document === undefined ? null : digest(document)) !== expectedDocumentHash) {
       throw new UserError(t('本地文件已变化，已停止覆盖。请重新检查差异。'));
     }
-    const pending: PendingWrite = { schema: 1, beforeHash: expectedHash, after: next };
+    const pending: PendingWrite = { schema: 1, beforeHash: expectedHash, restoreMissing: restoreMissing || undefined, after: next };
     const journal = path.join(this.directory, PENDING_FILE);
     await atomicWrite(journal, JSON.stringify(pending, null, 2) + '\n', true);
     const again = await this.readDocument();
-    if ((again === undefined ? null : digest(again)) !== expectedHash) {
+    if ((again === undefined ? null : digest(again)) !== expectedDocumentHash) {
       await fs.unlink(journal);
       throw new UserError(t('保存前检测到本地变化，未覆盖。'));
     }
@@ -164,10 +165,10 @@ export class LockedItem {
     catch (error) { await fs.unlink(journal); throw error; }
     let rejectedBeforePublish = false;
     try {
-      await atomicWrite(this.file, next.baseline, expectedHash === null, async () => {
+      await atomicWrite(this.file, next.baseline, expectedDocumentHash === null, async () => {
         try {
           const latest = await this.readDocument();
-          if ((latest === undefined ? null : digest(latest)) !== expectedHash) {
+          if ((latest === undefined ? null : digest(latest)) !== expectedDocumentHash) {
             throw new UserError(t('文件准备期间出现本地修改，未覆盖。'));
           }
           guard();
@@ -175,7 +176,7 @@ export class LockedItem {
         } catch (error) { rejectedBeforePublish = true; throw error; }
       });
     } catch (error) {
-      if (rejectedBeforePublish) { await fs.unlink(journal); }
+      if (rejectedBeforePublish || (expectedDocumentHash === null && code(error, 'EEXIST'))) { await fs.unlink(journal); }
       throw error;
     }
     await this.afterDocumentWrite?.();

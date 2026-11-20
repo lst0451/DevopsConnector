@@ -55,7 +55,7 @@ npm run compile
 | Compare with Last Synced Version | 离线比较上次成功同步基线与当前本地文件 |
 | Stop Tracking Work Item | 确认后仅删除跟踪基线；保留需求、设计与笔记 |
 
-发现本地修改、未保存编辑或目标文件缺失时，不自动覆盖或重建。可先用 Compare with Last Synced Version 将笔记移到独立文件，再手动恢复基线文本并保存，重新检查同步；插件没有“强制覆盖”按钮。
+如果已跟踪的 `workitem.md` 被删除，运行 **Sync Work Item** 并确认同步即可重新生成，即使远端修订未改变。需要保留同目录的 `.devops-sync.json`。本地文件有修改或未保存编辑时，同步会提示冲突。可先用 Compare with Last Synced Version 将笔记移到独立文件，再手动恢复基线文本并保存，重新检查同步；插件没有“强制覆盖”按钮。
 
 “已建立基线”不代表已检查最新版本；“有更新”不代表已写入本地。只有文档和跟踪记录提交成功后才报告同步成功。
 
