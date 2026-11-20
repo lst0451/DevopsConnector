@@ -129,9 +129,10 @@ export function validateWorkItem(value: unknown, id: number, project: string): W
     throw new UserError(t('Azure DevOps 返回的 Work Item 数据格式无效。'));
   }
   if (typeof value.fields['System.TeamProject'] !== 'string' ||
-      value.fields['System.TeamProject'].toLowerCase() !== project.toLowerCase()) {
+      (project !== '' && value.fields['System.TeamProject'].toLowerCase() !== project.toLowerCase())) {
     throw new UserError(t('返回的 Work Item 不属于配置的项目，未保存文件。'));
   }
+  validateProject(value.fields['System.TeamProject']);
   return { id, rev: value.rev as number, fields: value.fields };
 }
 
@@ -269,10 +270,10 @@ export class AzureDevOpsClient {
 
   private async request(connection: Connection, id: number, token: string, signal?: AbortSignal, revision?: number): Promise<WorkItem> {
     const organization = normalizeOrganization(connection.organizationUrl);
-    const project = validateProject(connection.project);
+    const project = connection.project ? validateProject(connection.project) : '';
     validateId(String(id));
     if (!token.trim()) { throw new UserError(t('请先设置 Personal Access Token。')); }
-    const url = organization + '/' + encodeURIComponent(project) +
+    const url = organization + (project ? '/' + encodeURIComponent(project) : '') +
       '/_apis/wit/workitems/' + id + (revision === undefined ? '' : '/revisions/' + revision) + '?api-version=7.1';
     const data = await this.fetchJson(url, token, signal);
     const item = validateWorkItem(data, id, project);

@@ -74,7 +74,7 @@
         },
         "devopsConnector.project": {
           "type": "string", "default": "", "scope": "resource",
-          "description": "Azure DevOps project name (not project GUID)."
+          "description": "Optional project name. Leave blank with an organization URL to look up work items by ID across projects."
         },
         "devopsConnector.saveDirectory": {
           "type": "string", "default": "docs/workitems", "scope": "resource",

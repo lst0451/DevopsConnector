@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import { readSettings, tokenKey } from './configuration';
 import { UserError } from './types';
-import { envToken, parseOrganizationInput, validateDirectory, validateProject } from './validation';
+import { envToken, parseOrganizationInput, configuredProject, validateDirectory } from './validation';
 
 const panels = new Map<string, vscode.WebviewPanel>();
 
@@ -52,7 +52,7 @@ button:disabled { opacity: .55; cursor: default; } :focus-visible { outline: 1px
 <select id="language"><option value="zh-CN" ${language() === 'zh-CN' ? 'selected' : ''}>简体中文</option><option value="en" ${language() === 'en' ? 'selected' : ''}>English</option></select>
 <form id="connection" novalidate><h2>${t('Azure DevOps 连接')}</h2>
 <label for="organization">${t('组织或项目地址')}</label><input id="organization" type="url" required placeholder="https://dev.azure.com/my-org" value="${escapeHtml(settings.get('organizationUrl', ''))}">
-<label for="project">${t('项目名称')}</label><input id="project" placeholder="${t('可从项目地址读取')}" value="${escapeHtml(settings.get('project', ''))}">
+<label for="project">${t('项目名称（可选）')}</label><input id="project" placeholder="${t('组织地址下留空可按编号跨项目查找')}" value="${escapeHtml(settings.get('project', ''))}">
 <label for="directory">${t('工作区内保存目录')}</label><input id="directory" required value="${escapeHtml(settings.get('saveDirectory', 'docs/workitems'))}">
 <button>${t('保存连接')}</button></form>
 <h2>Personal Access Token</h2><p id="source">${source}</p>
@@ -96,10 +96,7 @@ window.addEventListener('message', e => { byId('feedback').textContent = e.data.
       if (data.action === 'save') {
         if (![data.organization, data.project, data.directory].every(v => typeof v === 'string')) { return; }
         const parsed = parseOrganizationInput(data.organization);
-        const project = validateProject(data.project.trim() || parsed.project || '');
-        if (parsed.project && parsed.project.toLowerCase() !== project.toLowerCase()) {
-          throw new UserError(t('项目名称与地址中的项目不同。请核对名称，或清空项目名称以使用地址中的项目。'));
-        }
+        const project = configuredProject(data.project, parsed.project);
         const directory = validateDirectory(data.directory).join('/');
         const settings = config();
         const target = vscode.ConfigurationTarget.WorkspaceFolder;

@@ -58,6 +58,14 @@ export function validateProject(value: string): string {
   return project;
 }
 
+export function configuredProject(name: string, urlProject?: string): string {
+  const project = name.trim() || urlProject;
+  if (urlProject && project?.toLowerCase() !== urlProject.toLowerCase()) {
+    throw new UserError(t('项目名称与地址中的项目不同。请核对名称，或清空项目名称以使用地址中的项目。'));
+  }
+  return project ? validateProject(project) : '';
+}
+
 export function validateDirectory(value: string): string[] {
   const normalized = value.trim().replace(/\\/g, '/');
   const parts = normalized.split('/');
@@ -98,7 +106,7 @@ export function parseWorkItemInput(value: string, connection: Connection): numbe
   }
   const [project, area, action, id] = parts;
   if (organizationIdentity(organization) !== organizationIdentity(connection.organizationUrl) ||
-    project?.toLowerCase() !== connection.project.toLowerCase()) {
+    (connection.project !== '' && project?.toLowerCase() !== connection.project.toLowerCase())) {
     throw new UserError(t('链接与当前项目配置的组织或项目不一致，请先切换连接配置。'));
   }
   if (parts.length !== 4 || area !== '_workitems' || action !== 'edit' || !id) {

@@ -57,7 +57,8 @@ export function sameSource(a: Connection, b: Connection): boolean {
     a.project.toLowerCase() === b.project.toLowerCase();
 }
 export function assertSource(state: SyncState, connection: Connection): void {
-  if (!sameSource(state.connection, connection)) {
+  if (organizationIdentity(state.connection.organizationUrl) !== organizationIdentity(connection.organizationUrl) ||
+      (connection.project && state.connection.project.toLowerCase() !== connection.project.toLowerCase())) {
     throw new UserError(t('跟踪项的组织或项目与当前配置不同；请切回原配置。没有移动或覆盖文件。'));
   }
 }

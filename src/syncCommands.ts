@@ -57,7 +57,7 @@ export function registerSyncCommands(context: vscode.ExtensionContext, client: A
   const inputId = async (current: Session, title: string) => {
     const input = await vscode.window.showInputBox({
       title: 'DevOps Connector · ' + title,
-      prompt: current.settings.project + t(' — 输入 ID 或完整 Work Item 链接'),
+      prompt: (current.settings.project || current.settings.organizationUrl) + t(' — 输入 ID 或完整 Work Item 链接'),
       ignoreFocusOut: true,
       validateInput: (value) => {
         try { parseWorkItemInput(value, current.settings); return undefined; }

@@ -3,7 +3,7 @@ import { test, TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { DownloadedImage } from '../src/azureDevOpsClient';
+import { AzureDevOpsClient, DownloadedImage } from '../src/azureDevOpsClient';
 import { referencedLocalImages, renderWorkItem } from '../src/markdown';
 import { describeChanges, digest, LOCK_FILE, PENDING_FILE, readExistingExport, STATE_FILE } from '../src/syncModel';
 import { SyncRepository } from '../src/syncRepository';
@@ -51,6 +51,34 @@ async function setup(t: TestContext, hook?: () => Promise<void>) {
 }
 const guard = () => {};
 const clean = () => false;
+
+test('organization-only imports resolve and retain each project for comments, links and sync', async t => {
+  const { repository } = await setup(t);
+  const requests: string[] = [];
+  const client = new AzureDevOpsClient(async input => {
+    const url = new URL(String(input));
+    requests.push(url.pathname);
+    const id = url.pathname.includes('/42') ? 42 : 43;
+    const project = id === 42 ? 'Project A' : 'Project B';
+    const body = url.pathname.endsWith('/comments') ? { comments: [] } :
+      { id, rev: 1, fields: { 'System.TeamProject': project, 'System.Title': project } };
+    return Response.json(body);
+  });
+  const service = new SyncService(repository, { ...connection, project: '' }, client, now);
+  for (const [id, project] of [[42, 'Project A'], [43, 'Project B']] as const) {
+    await service.import(id, 'test', guard);
+    const { local, state } = await service.inspect(id);
+    const prefix = '/' + encodeURIComponent(project);
+    assert.equal(state.connection.project, project);
+    assert.ok(local?.includes(connection.organizationUrl + prefix + '/_workitems/edit/' + id));
+    assert.equal((await service.check(id, 'test', clean)).changed, false);
+    assert.deepEqual(requests.splice(0), [
+      '/_apis/wit/workitems/' + id, prefix + '/_apis/wit/workItems/' + id + '/comments',
+      prefix + '/_apis/wit/workitems/' + id, prefix + '/_apis/wit/workItems/' + id + '/comments',
+    ]);
+  }
+  assert.equal((await service.list()).length, 2);
+});
 
 test('new import creates verified tracking state without persisting PAT', async (t) => {
   const s = await setup(t);
