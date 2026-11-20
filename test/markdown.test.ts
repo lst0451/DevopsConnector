@@ -242,6 +242,7 @@ test('renderWorkItem and extractImageUrls handle comments including images and e
   assert.ok(md.includes('### Comment 1 — Rim El Kassaby (2026-11-10T15:40:38\\.243Z)'));
   assert.ok(md.includes('![shot.png](images/shot-12345678.png)'));
   assert.ok(md.includes('### Comment 2 — Shitao Li (2026-11-11T13:13:44\\.807Z, edited 2026-11-11T14:00:00\\.000Z)'));
+  assert.ok(md.indexOf('### Comment 2 —') < md.indexOf('### Comment 1 —'));
   assert.ok(md.includes('HTML **comment**'));
   assert.ok(md.includes('评论与图片已同步到本地'));
 });

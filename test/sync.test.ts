@@ -724,7 +724,9 @@ test('import and sync fetch all comments including images inside comments', asyn
 
   const secondMd = await fs.readFile(s.file, 'utf8');
   assert.ok(secondMd.includes('### Comment 2 — Bob (2026-11-12T10:00:00Z)'));
+  assert.ok(secondMd.indexOf('### Comment 2 — Bob') < secondMd.indexOf('### Comment 1 — Alice'));
   assert.ok(secondMd.includes('Follow-up verified'));
+  assert.equal((await service.check(42, 'not-real', clean)).changed, false);
 });
 
 test('sync upgrades an existing tracked item without Comments section at unchanged revision', async (t) => {

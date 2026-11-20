@@ -1,7 +1,7 @@
 import { t } from './i18n';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
-import { Connection, WorkItem } from './types';
+import { Connection, WorkItem, WorkItemComment } from './types';
 import { workItemUrl } from './validation';
 
 export const CURRENT_RENDERER_VERSION = 3;
@@ -165,6 +165,15 @@ export function extractImageUrlsFromHtml(html: string, base: string): string[] {
   return urls;
 }
 
+function newestCommentsFirst(comments: readonly WorkItemComment[]): WorkItemComment[] {
+  return [...comments].sort((a, b) => {
+    const first = Date.parse(a.createdDate);
+    const second = Date.parse(b.createdDate);
+    const byTime = (Number.isFinite(second) ? second : -Infinity) - (Number.isFinite(first) ? first : -Infinity);
+    return byTime || b.id - a.id;
+  });
+}
+
 export function extractImageUrls(item: WorkItem, connection: Connection, rendererVersion: RendererVersion = CURRENT_RENDERER_VERSION): string[] {
   const fields = item.fields;
   const source = workItemUrl(connection, item.id);
@@ -180,7 +189,7 @@ export function extractImageUrls(item: WorkItem, connection: Connection, rendere
     htmlToMarkdown(text(fields[field]), source, undefined, urls);
   }
   if (rendererVersion >= 3 && item.comments) {
-    for (const comment of item.comments) {
+    for (const comment of newestCommentsFirst(item.comments)) {
       htmlToMarkdown(text(comment.text), source, undefined, urls);
     }
   }
@@ -210,14 +219,15 @@ export function renderWorkItem(item: WorkItem, connection: Connection, importedA
     if (item.comments.length === 0) {
       return [t('## Comments\n\n（未提供）')];
     }
-    const rendered = item.comments.map((comment, idx) => {
+    const comments = newestCommentsFirst(item.comments);
+    const rendered = comments.map((comment, idx) => {
       const author = inline(comment.createdBy) || 'Unknown';
       const created = inline(comment.createdDate);
       const edited = comment.modifiedDate && comment.modifiedDate !== comment.createdDate ?
         ', edited ' + inline(comment.modifiedDate) : '';
       const timePart = created ? ' (' + created + edited + ')' : '';
       const body = htmlToMarkdown(text(comment.text), source, imagePaths) || t('（未提供）');
-      return '### Comment ' + (idx + 1) + ' — ' + author + timePart + '\n\n' + body;
+      return '### Comment ' + (comments.length - idx) + ' — ' + author + timePart + '\n\n' + body;
     });
     return ['## Comments\n\n' + rendered.join('\n\n')];
   };

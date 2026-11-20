@@ -209,8 +209,8 @@ test('getWorkItemComments paginates, filters deleted entries, and resolves user 
   });
   const comments = await client.getWorkItemComments(connection, 42, 'not-real', undefined, fieldIdentities);
   assert.equal(urls.length, 2);
-  assert.equal(urls[0], 'https://dev.azure.com/example/My%20Project/_apis/wit/workItems/42/comments?$top=200&order=asc&api-version=7.1-preview.4');
-  assert.equal(urls[1], 'https://dev.azure.com/example/My%20Project/_apis/wit/workItems/42/comments?$top=200&order=asc&continuationToken=page-2&api-version=7.1-preview.4');
+  assert.equal(urls[0], 'https://dev.azure.com/example/My%20Project/_apis/wit/workItems/42/comments?$top=200&order=desc&api-version=7.1-preview.4');
+  assert.equal(urls[1], 'https://dev.azure.com/example/My%20Project/_apis/wit/workItems/42/comments?$top=200&order=desc&continuationToken=page-2&api-version=7.1-preview.4');
   assert.equal(comments.length, 2);
   assert.equal(comments[0]?.text, 'Hello @Bob and `@<33333333-3333-3333-3333-333333333333>`');
   assert.equal(comments[0]?.createdBy, 'Alice');

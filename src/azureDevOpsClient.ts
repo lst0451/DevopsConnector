@@ -165,7 +165,7 @@ export class AzureDevOpsClient {
     let continuationToken: string | undefined;
     for (let page = 0; page < 20; page++) {
       const url = organization + '/' + encodeURIComponent(project) +
-        '/_apis/wit/workItems/' + id + '/comments?$top=200&order=asc' +
+        '/_apis/wit/workItems/' + id + '/comments?$top=200&order=desc' +
         (continuationToken ? '&continuationToken=' + encodeURIComponent(continuationToken) : '') +
         '&api-version=7.1-preview.4';
       const data = await this.fetchJson(url, token, signal);
