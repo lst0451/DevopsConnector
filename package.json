@@ -3,15 +3,17 @@
   "displayName": "DevOps Connector",
   "description": "Import, track and safely synchronize Azure DevOps work items as local Markdown.",
   "version": "0.2.1",
-  "publisher": "devops-connector-local",
+  "publisher": "ShitaoLi",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "icon": "images/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/lst0451/DevopsConnector.git"
   },
   "engines": { "vscode": "^1.95.0", "node": ">=22" },
   "categories": ["Other"],
+  "keywords": ["azure devops", "work items", "markdown", "sync", "devops"],
   "main": "./dist/extension.js",
   "extensionKind": ["workspace"],
   "capabilities": {
@@ -97,7 +99,7 @@
     "watch": "node scripts/build.mjs --watch",
     "test": "tsc && node --test out/test/*.test.js",
     "vscode:prepublish": "npm run check && node scripts/build.mjs --production",
-    "package": "vsce package --allow-missing-repository --skip-license --out work/devops-connector-0.2.1.vsix"
+    "package": "vsce package --out work/devops-connector-0.2.1.vsix"
   },
   "dependencies": { "turndown": "7.2.5", "turndown-plugin-gfm": "1.0.2" },
   "devDependencies": {

@@ -28,7 +28,7 @@ npm run compile
 
 1. 按 **Ctrl+Shift+P**，输入并选择 **DevOps Connector: 配置 (Configuration)**（英文界面为 **DevOps Connector: Configuration**）。多根工作区会先提示选择文件夹。
    在 **语言 / Language** 中可选择简体中文或 English。选择立即生效，并作为用户偏好跨项目保存。命令名称、操作提示和新导出文档的插件说明随语言切换。Azure DevOps 标题、字段值、正文和评论保留原文。已有文档在确认同步后更新。
-2. 若要跨项目使用，填写组织根地址（例如 `https://vffice.visualstudio.com`），将项目名称留空，点击 **保存连接**。导入时只需输入 Work Item 编号，插件会从 `System.TeamProject` 读取所属项目，并生成带项目名的来源链接。若填写项目名称或使用完整项目地址，则限定在该项目内。默认目录为 `docs/workitems`。
+2. 若要跨项目使用，填写组织根地址（默认为 `https://vffice.visualstudio.com`），将项目名称留空，点击 **保存连接**。导入时只需输入 Work Item 编号，插件会从 `System.TeamProject` 读取所属项目，并生成带项目名的来源链接。若填写项目名称或使用完整项目地址，则限定在该项目内。默认目录为 `.vscode/docs/workitems`。
 3. 在同一页查看 PAT 来源。点击 **设置或替换 PAT**，在密码框输入具有 Work Items (Read) 权限的 PAT。凭据按工作区文件夹和组织保存在 VS Code SecretStorage。点击 **移除已存 PAT** 后，插件会使用非空的环境变量 `AZURE_DEVOPS_PAT`（如有）。
 4. 打开命令面板，运行 **DevOps Connector: Import Work Item**，输入 ID 或完整链接。首次成功导入即可确认读取权限。
 
@@ -69,6 +69,7 @@ npm run compile
 | Sync All Work Items | 批量确认后更新无本地修改的任务；跳过冲突与错误，提供汇总 |
 | View Remote Changes | 仅检查并预览本地与远端差异，不修改需求文件 |
 | Compare with Last Synced Version | 离线比较上次成功同步基线与当前本地文件 |
+| Translate Work Item to Chinese（翻译工作项为中文） | 通过 VS Code Language Model API（`vscode.lm`）按章节分段将 `workitem.md` 翻译为简体中文，保存为同目录的 `workitem.zh-CN.md`，不影响同步基线 |
 | Stop Tracking Work Item | 确认后仅删除跟踪基线；保留需求、设计与笔记 |
 
 如果已跟踪的 `workitem.md` 被删除，运行 **Sync Work Item** 并确认同步即可重新生成，即使远端修订未改变。需要保留同目录的 `.devops-sync.json`。本地文件有修改或未保存编辑时，同步会提示冲突。可先用 Compare with Last Synced Version 将笔记移到独立文件，再手动恢复基线文本并保存，重新检查同步；插件没有“强制覆盖”按钮。
@@ -96,7 +97,7 @@ npm run compile
 
 - 只读 Azure DevOps Services API 7.1。支持 dev.azure.com 和 visualstudio.com 地址；保留配置的域名用于请求与导出链接，不强制改写域名。同一组织的两种地址共享凭据身份。
 - 不支持自建 Azure DevOps Server、双向回写、Web/虚拟工作区。远程开发和企业代理仍待专项验收。
-- 只在用户主动导入、接入跟踪或检查/同步时联网；没有后台轮询、遥测或 AI 上传。
+- 只在用户主动导入、接入跟踪或检查/同步时联网；没有后台轮询或遥测。仅在用户主动触发 **翻译工作项为中文** 命令时调用 VS Code Language Model API（`vscode.lm`）。
 - 仅向经过校验的 Azure DevOps 云端地址发送 PAT，不跟随重定向；网络错误不输出原始响应或凭据。
 - 要求可信工作区。保存目录禁止绝对路径、父目录跳转、保留名称和目录中的符号链接/目录联接。
 - 首次创建以独占硬链接发布；更新采用同目录临时文件与原子替换。文件系统不支持所需能力时失败，不退回直接截断写入。

@@ -23,7 +23,7 @@ Press **F5** in the extension project and select **Run DevOps Connector**. In th
 ## Getting started
 
 1. Press **Ctrl+Shift+P**, search for **Configuration**, and open the DevOps Connector configuration page. In a multi-root workspace, select the target folder. Choose **English** or **简体中文** under **Language**. The preference takes effect immediately across projects and applies to commands, prompts, and extension-generated text in new exports. Existing documents pick up the change on confirmed sync. Titles, field values, descriptions, and comments retain their original language.
-2. Enter your organization URL, such as `https://vffice.visualstudio.com`, and choose **Save connection**. Leave **Project name** blank to import by ID across projects. The extension reads `System.TeamProject` and builds a source link for the item's actual project. To restrict imports to one project, enter its name or use its project URL. The default save directory is `docs/workitems`.
+2. Enter your organization URL (defaults to `https://vffice.visualstudio.com`), and choose **Save connection**. Leave **Project name** blank to import by ID across projects. The extension reads `System.TeamProject` and builds a source link for the item's actual project. To restrict imports to one project, enter its name or use its project URL. The default save directory is `.vscode/docs/workitems`.
 3. Check the PAT source on the same page. Choose **Set or replace PAT** and enter a token with **Work Items (Read)** permission in the password prompt. VS Code SecretStorage keeps it per workspace folder and organization. Removing the saved PAT lets the extension use `AZURE_DEVOPS_PAT` if that environment variable has a value. Existing connections and credentials carry over. To manage a previous organization's PAT, switch back to that organization and save the connection.
 4. Run **DevOps Connector: Import Work Item** and enter an ID or a full work item URL. A successful import confirms read access to that item.
 
@@ -58,6 +58,7 @@ Version 0.2.1 uses export template 3, which adds **Specifications** (`Custom.Spe
 | Sync All Work Items | Updates eligible items after batch confirmation, skips conflicts and errors, and reports the results. |
 | View Remote Changes | Opens a read-only diff between the local copy and the incoming document. |
 | Compare with Last Synced Version | Compares the local file with its last successful sync baseline, including offline. |
+| Translate Work Item to Chinese | Translates `workitem.md` into Simplified Chinese in chunks using the VS Code Language Model API (`vscode.lm`) and saves `workitem.zh-CN.md` alongside it without altering the sync baseline. |
 | Stop Tracking Work Item | Removes the tracking record after confirmation and keeps the work item, designs, and notes. |
 
 If you delete a tracked `workitem.md`, keep the adjacent `.devops-sync.json`. Run **Sync Work Item** and confirm to recreate the file, even when the remote revision is unchanged. If the file contains local changes or unsaved edits, sync reports a conflict. Use **Compare with Last Synced Version** to identify your changes, move notes to a separate file, restore and save the baseline text, then check again.
@@ -85,7 +86,7 @@ Comments appear newest first by creation time. HTTPS images in fields and commen
 
 - The extension uses the read-only Azure DevOps Services API 7.1. Requests and exported links preserve the configured `dev.azure.com` or `visualstudio.com` hostname. Both URL forms for the same organization share a credential identity.
 - The extension supports trusted, file-system workspaces and Azure DevOps Services. Self-hosted Azure DevOps Server, write-back, and web or virtual workspaces are unsupported. Remote development and enterprise proxy setups still require verification.
-- Network activity occurs during user-initiated imports, tracking, checks, or syncs. The extension has no background polling, telemetry, or AI uploads.
+- Network activity occurs during user-initiated imports, tracking, checks, or syncs. The extension has no background polling or telemetry; the VS Code Language Model API (`vscode.lm`) is only invoked when you explicitly run **Translate Work Item to Chinese**.
 - The extension sends the PAT only to validated Azure DevOps cloud URLs, rejects redirects, and keeps credentials and raw response bodies out of network errors.
 - The save directory must be inside the workspace. Path validation rejects absolute paths, parent traversal, reserved names, symbolic links, and directory junctions.
 - New files use exclusive hard-link creation. Updates use a temporary file in the same directory and an atomic replacement. Saving stops if the file system lacks the required capability.
