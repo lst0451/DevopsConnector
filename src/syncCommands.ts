@@ -7,7 +7,7 @@ import { AzureDevOpsClient } from './azureDevOpsClient';
 import { chooseFolder, getToken, readSettings } from './configuration';
 import { importFilePath } from './storage';
 import { SyncRepository } from './syncRepository';
-import { ExistingFileMismatch, SyncService, TrackedItem } from './syncService';
+import { SyncService, TrackedItem } from './syncService';
 import { describeChanges, SyncPlan } from './syncModel';
 import {
   buildTranslationPrompt,
@@ -152,22 +152,6 @@ export function registerSyncCommands(context: vscode.ExtensionContext, client: A
     await progress(t('正在导入 #') + id, (signal) => current.service.import(id, pat, () => guard(current, id), signal));
     await vscode.window.showTextDocument(target(current, id), { preview: false });
     await vscode.window.showInformationMessage('#' + id + t(' 已导入并加入跟踪。'));
-  });
-  register('devopsConnector.trackExistingWorkItem', async () => {
-    const current = await session(); if (!current) { return; }
-    const id = await inputId(current, t('接入现有导出文件')); if (id === undefined) { return; }
-    const pat = await token(current);
-    try {
-      await progress(t('正在核对 #') + id + t(' 的历史修订'), (signal) =>
-        current.service.trackExisting(id, pat, () => guard(current, id), signal));
-    } catch (error) {
-      if (error instanceof ExistingFileMismatch) {
-        await vscode.commands.executeCommand('vscode.diff', target(current, id),
-          snapshot(error.expected, 'historical.md'), '#' + id + t(' 本地 ↔ 历史导出基线'), { preview: true });
-      }
-      throw error;
-    }
-    await vscode.window.showInformationMessage('#' + id + t(' 已接入跟踪，原文档未改动。请运行 Sync Work Item 检查最新版本。'));
   });
   register('devopsConnector.syncWorkItem', async () => {
     const current = await session(); if (!current) { return; }

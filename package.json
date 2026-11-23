@@ -2,7 +2,7 @@
   "name": "devops-connector",
   "displayName": "DevOps Connector",
   "description": "Import, track and safely synchronize Azure DevOps work items as local Markdown.",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "publisher": "ShitaoLi",
   "private": true,
   "license": "MIT",
@@ -50,11 +50,6 @@
       {
         "command": "devopsConnector.importWorkItem",
         "title": "Import Work Item",
-        "category": "DevOps Connector"
-      },
-      {
-        "command": "devopsConnector.trackExistingWorkItem",
-        "title": "Track Existing Work Item",
         "category": "DevOps Connector"
       },
       {
