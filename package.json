@@ -6,6 +6,10 @@
   "publisher": "devops-connector-local",
   "private": true,
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lst0451/DevopsConnector.git"
+  },
   "engines": { "vscode": "^1.95.0", "node": ">=22" },
   "categories": ["Other"],
   "main": "./dist/extension.js",
