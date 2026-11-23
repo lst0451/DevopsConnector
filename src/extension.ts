@@ -1,4 +1,4 @@
-import { language, setLanguage, t, withLanguage } from './i18n';
+import { setLanguage, t } from './i18n';
 import * as vscode from 'vscode';
 import { AzureDevOpsClient } from './azureDevOpsClient';
 import { chooseFolder } from './configuration';
@@ -7,17 +7,12 @@ import { UserError } from './types';
 import { openConfiguration } from './configurationPage';
 
 export function activate(context: vscode.ExtensionContext): void {
-  const loadLanguage = () => setLanguage(vscode.workspace.getConfiguration('devopsConnector').get('language') === 'en' ? 'en' : 'zh-CN');
-  loadLanguage();
-  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
-    if (event.affectsConfiguration('devopsConnector.language')) { loadLanguage(); }
-  }));
+  setLanguage('en');
   const client = new AzureDevOpsClient();
   const register = (id: string, action: () => Promise<void>) => {
     const execute = async () => {
       try {
-        if (id === 'devopsConnector.configure') { await action(); }
-        else { await withLanguage(language(), action); }
+        await action();
       }
       catch (error) {
         if (error instanceof vscode.CancellationError) { return; }
@@ -25,7 +20,7 @@ export function activate(context: vscode.ExtensionContext): void {
           (error instanceof UserError ? error.message : t('操作失败。请检查工作区权限和配置后重试。')));
       }
     };
-    context.subscriptions.push(vscode.commands.registerCommand(id, execute), vscode.commands.registerCommand(id + '.zh', execute));
+    context.subscriptions.push(vscode.commands.registerCommand(id, execute));
   };
 
   register('devopsConnector.configure', async () => {

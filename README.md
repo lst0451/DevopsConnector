@@ -1,7 +1,5 @@
 # DevOps Connector
 
-English | <a href="./README.zh-CN.md">简体中文</a>
-
 Import Azure DevOps work items into a VS Code workspace as Markdown files. Preview remote changes and choose when to sync your local copies.
 
 ## Status
@@ -22,7 +20,7 @@ Press **F5** in the extension project and select **Run DevOps Connector**. In th
 
 ## Getting started
 
-1. Press **Ctrl+Shift+P**, search for **Configuration**, and open the DevOps Connector configuration page. In a multi-root workspace, select the target folder. Choose **English** or **简体中文** under **Language**. The preference takes effect immediately across projects and applies to commands, prompts, and extension-generated text in new exports. Existing documents pick up the change on confirmed sync. Titles, field values, descriptions, and comments retain their original language.
+1. Press **Ctrl+Shift+P**, search for **Configuration**, and open the DevOps Connector configuration page. In a multi-root workspace, select the target folder.
 2. Enter your organization URL (defaults to `https://vffice.visualstudio.com`), and choose **Save connection**. Leave **Project name** blank to import by ID across projects. The extension reads `System.TeamProject` and builds a source link for the item's actual project. To restrict imports to one project, enter its name or use its project URL. The default save directory is `.vscode/docs/workitems`.
 3. Check the PAT source on the same page. Choose **Set or replace PAT** and enter a token with **Work Items (Read)** permission in the password prompt. VS Code SecretStorage keeps it per workspace folder and organization. Removing the saved PAT lets the extension use `AZURE_DEVOPS_PAT` if that environment variable has a value. Existing connections and credentials carry over. To manage a previous organization's PAT, switch back to that organization and save the connection.
 4. Run **DevOps Connector: Import Work Item** and enter an ID or a full work item URL. A successful import confirms read access to that item.

@@ -1,4 +1,4 @@
-import { language, t } from './i18n';
+import { t } from './i18n';
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import { readSettings, tokenKey } from './configuration';
@@ -38,7 +38,7 @@ export async function openConfiguration(folder: vscode.WorkspaceFolder, secrets:
     const source = !displayedKey ? t('请先保存有效的连接配置。') : stored ? t('正在使用此工作区与组织的已存 PAT。') :
       envToken() ? t('正在使用环境变量 AZURE_DEVOPS_PAT。') : t('尚未设置 PAT。');
     const nonce = randomBytes(18).toString('base64');
-    panel.webview.html = `<!doctype html><html lang="${language()}"><head><meta charset="utf-8">
+    panel.webview.html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; form-action 'none'">
 <style nonce="${nonce}">
 body { max-width: 42rem; padding: 1.5rem; color: var(--vscode-foreground); font-family: var(--vscode-font-family); }
@@ -48,8 +48,6 @@ input, select { width: 100%; box-sizing: border-box; background: var(--vscode-in
 button { margin: .8rem .4rem 0 0; padding: .45rem .85rem; border: 1px solid transparent; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; }
 button:disabled { opacity: .55; cursor: default; } :focus-visible { outline: 1px solid var(--vscode-focusBorder); }
 </style></head><body><h1>${t('DevOps Connector 配置')}</h1><p>${t('工作区')} · ${escapeHtml(folder.uri.fsPath)}</p>
-<label for="language">${t('语言')}</label>
-<select id="language"><option value="zh-CN" ${language() === 'zh-CN' ? 'selected' : ''}>简体中文</option><option value="en" ${language() === 'en' ? 'selected' : ''}>English</option></select>
 <form id="connection" novalidate><h2>${t('Azure DevOps 连接')}</h2>
 <label for="organization">${t('组织或项目地址')}</label><input id="organization" type="url" required placeholder="https://dev.azure.com/my-org" value="${escapeHtml(settings.get('organizationUrl', 'https://vffice.visualstudio.com'))}">
 <label for="project">${t('项目名称（可选）')}</label><input id="project" placeholder="${t('组织地址下留空可按编号跨项目查找')}" value="${escapeHtml(settings.get('project', ''))}">
@@ -61,7 +59,6 @@ button:disabled { opacity: .55; cursor: default; } :focus-visible { outline: 1px
 <p role="status" id="feedback">${escapeHtml(message)}</p>
 <script nonce="${nonce}">
 const api = acquireVsCodeApi(), byId = id => document.getElementById(id);
-byId('language').onchange = e => api.postMessage({action:'language', value:e.target.value});
 const fields = ['organization','project','directory'];
 if (${clearDraft}) api.setState(undefined);
 const draft = api.getState();
@@ -82,16 +79,11 @@ window.addEventListener('message', e => { byId('feedback').textContent = e.data.
   }
 
   panel.webview.onDidReceiveMessage(async data => {
-    if (busy || !data || !['language', 'save', 'set', 'remove'].includes(data.action)) { return; }
+    if (busy || !data || !['save', 'set', 'remove'].includes(data.action)) { return; }
     busy = true;
     try {
       if (!vscode.workspace.isTrusted || !vscode.workspace.workspaceFolders?.some(f => f.uri.toString() === id)) {
         throw new UserError(t('请在受信任的工作区文件夹中重新打开配置页。'));
-      }
-      if (data.action === 'language') {
-        if (data.value !== 'en' && data.value !== 'zh-CN') { return; }
-        await vscode.workspace.getConfiguration('devopsConnector').update('language', data.value, vscode.ConfigurationTarget.Global);
-        return;
       }
       if (data.action === 'save') {
         if (![data.organization, data.project, data.directory].every(v => typeof v === 'string')) { return; }
