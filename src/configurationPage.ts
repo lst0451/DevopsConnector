@@ -51,9 +51,9 @@ button:disabled { opacity: .55; cursor: default; } :focus-visible { outline: 1px
 <label for="language">${t('语言')}</label>
 <select id="language"><option value="zh-CN" ${language() === 'zh-CN' ? 'selected' : ''}>简体中文</option><option value="en" ${language() === 'en' ? 'selected' : ''}>English</option></select>
 <form id="connection" novalidate><h2>${t('Azure DevOps 连接')}</h2>
-<label for="organization">${t('组织或项目地址')}</label><input id="organization" type="url" required placeholder="https://dev.azure.com/my-org" value="${escapeHtml(settings.get('organizationUrl', ''))}">
+<label for="organization">${t('组织或项目地址')}</label><input id="organization" type="url" required placeholder="https://dev.azure.com/my-org" value="${escapeHtml(settings.get('organizationUrl', 'https://vffice.visualstudio.com'))}">
 <label for="project">${t('项目名称（可选）')}</label><input id="project" placeholder="${t('组织地址下留空可按编号跨项目查找')}" value="${escapeHtml(settings.get('project', ''))}">
-<label for="directory">${t('工作区内保存目录')}</label><input id="directory" required value="${escapeHtml(settings.get('saveDirectory', 'docs/workitems'))}">
+<label for="directory">${t('工作区内保存目录')}</label><input id="directory" required value="${escapeHtml(settings.get('saveDirectory', '.vscode/docs/workitems'))}">
 <button>${t('保存连接')}</button></form>
 <h2>Personal Access Token</h2><p id="source">${source}</p>
 <button id="set" ${displayedKey ? '' : 'disabled'}>${t('设置或替换 PAT')}</button>

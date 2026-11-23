@@ -17,12 +17,12 @@ export async function chooseFolder(): Promise<vscode.WorkspaceFolder | undefined
 
 export function readSettings(folder: vscode.WorkspaceFolder): Connection & { saveDirectory: string } {
   const config = vscode.workspace.getConfiguration('devopsConnector', folder.uri);
-  const organization = config.get<string>('organizationUrl', '');
+  const organization = config.get<string>('organizationUrl', 'https://vffice.visualstudio.com');
   if (!organization.trim()) { throw new UserError(t('请先运行 DevOps Connector: Configuration，填写组织地址。')); }
   const parsed = parseOrganizationInput(organization);
   const organizationUrl = parsed.organizationUrl;
   const project = configuredProject(config.get<string>('project', ''), parsed.project);
-  const saveDirectory = config.get<string>('saveDirectory', 'docs/workitems');
+  const saveDirectory = config.get<string>('saveDirectory', '.vscode/docs/workitems');
   validateDirectory(saveDirectory);
   return { organizationUrl, project, saveDirectory };
 }

@@ -77,7 +77,7 @@
           "description": "DevOps Connector display language."
         },
         "devopsConnector.organizationUrl": {
-          "type": "string", "default": "", "scope": "resource",
+          "type": "string", "default": "https://vffice.visualstudio.com", "scope": "resource",
           "description": "Azure DevOps organization or project URL, e.g. https://vffice.visualstudio.com/ or https://dev.azure.com/my-org. The chosen hostname is preserved. No credentials."
         },
         "devopsConnector.project": {
@@ -85,7 +85,7 @@
           "description": "Optional project name. Leave blank with an organization URL to look up work items by ID across projects."
         },
         "devopsConnector.saveDirectory": {
-          "type": "string", "default": "docs/workitems", "scope": "resource",
+          "type": "string", "default": ".vscode/docs/workitems", "scope": "resource",
           "description": "Relative directory inside the selected workspace folder. Absolute paths and parent traversal are not allowed."
         }
       }
