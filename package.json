@@ -11,46 +11,116 @@
     "type": "git",
     "url": "https://github.com/lst0451/DevopsConnector.git"
   },
-  "engines": { "vscode": "^1.95.0", "node": ">=22" },
-  "categories": ["Other"],
-  "keywords": ["azure devops", "work items", "markdown", "sync", "devops"],
+  "engines": {
+    "vscode": "^1.95.0",
+    "node": ">=22"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "azure devops",
+    "work items",
+    "markdown",
+    "sync",
+    "devops"
+  ],
   "main": "./dist/extension.js",
-  "extensionKind": ["workspace"],
+  "extensionKind": [
+    "workspace"
+  ],
   "capabilities": {
-    "untrustedWorkspaces": { "supported": false, "description": "Import writes files and uses stored credentials. Trust the workspace first." },
-    "virtualWorkspaces": { "supported": false, "description": "Version 0.1 requires a file-system workspace." }
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Import writes files and uses stored credentials. Trust the workspace first."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "Version 0.1 requires a file-system workspace."
+    }
   },
   "contributes": {
     "commands": [
-      { "command": "devopsConnector.configure", "title": "Configuration", "category": "DevOps Connector", "icon": "$(gear)" },
-      { "command": "devopsConnector.importWorkItem", "title": "Import Work Item", "category": "DevOps Connector" },
-      { "command": "devopsConnector.trackExistingWorkItem", "title": "Track Existing Work Item", "category": "DevOps Connector" },
-      { "command": "devopsConnector.showTrackedWorkItems", "title": "Show Tracked Work Items", "category": "DevOps Connector" },
-      { "command": "devopsConnector.syncWorkItem", "title": "Sync Work Item", "category": "DevOps Connector" },
-      { "command": "devopsConnector.syncAllWorkItems", "title": "Sync All Work Items", "category": "DevOps Connector" },
-      { "command": "devopsConnector.previewChanges", "title": "View Remote Changes", "category": "DevOps Connector" },
-      { "command": "devopsConnector.compareBaseline", "title": "Compare with Last Synced Version", "category": "DevOps Connector" },
-      { "command": "devopsConnector.stopTracking", "title": "Stop Tracking Work Item", "category": "DevOps Connector" },
-      { "command": "devopsConnector.translateWorkItem", "title": "Translate Work Item to Chinese", "category": "DevOps Connector" }
+      {
+        "command": "devopsConnector.configure",
+        "title": "Configuration",
+        "category": "DevOps Connector",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "devopsConnector.importWorkItem",
+        "title": "Import Work Item",
+        "category": "DevOps Connector"
+      },
+      {
+        "command": "devopsConnector.trackExistingWorkItem",
+        "title": "Track Existing Work Item",
+        "category": "DevOps Connector"
+      },
+      {
+        "command": "devopsConnector.showTrackedWorkItems",
+        "title": "Show Tracked Work Items",
+        "category": "DevOps Connector"
+      },
+      {
+        "command": "devopsConnector.syncWorkItem",
+        "title": "Sync Work Item",
+        "category": "DevOps Connector"
+      },
+      {
+        "command": "devopsConnector.syncAllWorkItems",
+        "title": "Sync All Work Items",
+        "category": "DevOps Connector"
+      },
+      {
+        "command": "devopsConnector.previewChanges",
+        "title": "View Remote Changes",
+        "category": "DevOps Connector"
+      },
+      {
+        "command": "devopsConnector.compareBaseline",
+        "title": "Compare with Last Synced Version",
+        "category": "DevOps Connector"
+      },
+      {
+        "command": "devopsConnector.stopTracking",
+        "title": "Stop Tracking Work Item",
+        "category": "DevOps Connector"
+      },
+      {
+        "command": "devopsConnector.translateWorkItem",
+        "title": "Translate Work Item to Chinese",
+        "category": "DevOps Connector"
+      }
     ],
     "menus": {
       "view/title": [
-        { "command": "devopsConnector.configure", "when": "view == workbench.explorer.fileView && isWorkspaceTrusted", "group": "navigation@99" }
+        {
+          "command": "devopsConnector.configure",
+          "when": "view == workbench.explorer.fileView && isWorkspaceTrusted",
+          "group": "navigation@99"
+        }
       ]
     },
     "configuration": {
       "title": "DevOps Connector",
       "properties": {
         "devopsConnector.organizationUrl": {
-          "type": "string", "default": "https://vffice.visualstudio.com", "scope": "resource",
+          "type": "string",
+          "default": "https://vffice.visualstudio.com",
+          "scope": "resource",
           "description": "Azure DevOps organization or project URL, e.g. https://vffice.visualstudio.com/ or https://dev.azure.com/my-org. The chosen hostname is preserved. No credentials."
         },
         "devopsConnector.project": {
-          "type": "string", "default": "", "scope": "resource",
+          "type": "string",
+          "default": "",
+          "scope": "resource",
           "description": "Optional project name. Leave blank with an organization URL to look up work items by ID across projects."
         },
         "devopsConnector.saveDirectory": {
-          "type": "string", "default": ".vscode/docs/workitems", "scope": "resource",
+          "type": "string",
+          "default": ".vscode/docs/workitems",
+          "scope": "resource",
           "description": "Relative directory inside the selected workspace folder. Absolute paths and parent traversal are not allowed."
         }
       }
@@ -62,14 +132,17 @@
     "watch": "node scripts/build.mjs --watch",
     "test": "tsc && node --test out/test/*.test.js",
     "vscode:prepublish": "npm run check && node scripts/build.mjs --production",
-    "package": "vsce package --out work/devops-connector-0.2.1.vsix"
+    "package": "vsce package --out work/"
   },
-  "dependencies": { "turndown": "7.2.5", "turndown-plugin-gfm": "1.0.2" },
+  "dependencies": {
+    "turndown": "7.2.5",
+    "turndown-plugin-gfm": "1.0.2"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/turndown": "^5.0.5",
     "@types/vscode": "1.95.0",
-    "@vscode/vsce": "4.1.0",
+    "@vscode/vsce": "^4.1.1",
     "esbuild": "^0.25.0",
     "typescript": "5.9.3"
   }
